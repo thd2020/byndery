@@ -1,0 +1,7 @@
+WORKLOG.md
+.cursor/rules/
+.worklog-push/
+*.pfx
+.env
+.env.*
+node_modules/
