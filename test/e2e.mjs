@@ -499,6 +499,28 @@ await step('Ctrl+Up selects the previous command and scrolls to it', async () =>
   await waitFor(async () => (await win.locator('.cmd-focus').count()) === 0, 'back at the prompt')
 })
 
+await step('Ctrl+Insert copies without interrupting; Shift+Insert pastes', async () => {
+  await win.evaluate(() => window.__byndery.terms.active.focus())
+  await win.evaluate(() => window.byndery.clipboard.write('before'))
+  // With nothing selected, Ctrl+Insert does nothing: no ^C reaches the shell.
+  await win.keyboard.press('Control+Insert')
+  assert.equal(await win.evaluate(() => window.byndery.clipboard.read()), 'before')
+  await win.evaluate(() => {
+    const x = window.__byndery.terms.active.xterm
+    const b = x.buffer.active
+    for (let i = b.length - 1; i >= 0; i--) {
+      if (b.getLine(i).translateToString(true).includes('200')) return x.select(0, i, 3)
+    }
+  })
+  await win.keyboard.press('Control+Insert')
+  await waitFor(async () => (await win.evaluate(() => window.byndery.clipboard.read())) === '200', 'selection copied')
+  assert.ok(await win.evaluate(() => window.__byndery.terms.active.xterm.hasSelection()), 'selection kept')
+  await win.evaluate(() => window.byndery.clipboard.write('echo pasted-by-shift-insert'))
+  await win.keyboard.press('Shift+Insert')
+  await waitFor(async () => (await termText()).includes('echo pasted-by-shift-insert'), 'Shift+Insert pasted')
+  await win.keyboard.press('Control+U')
+})
+
 await step('Ctrl+T opens a terminal in the active folder; Ctrl+W closes it', async () => {
   await win.evaluate(() => window.__byndery.terms.active.focus())
   await win.keyboard.press('Control+T')

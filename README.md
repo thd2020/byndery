@@ -59,7 +59,7 @@ npm run dev
 
 The tree can show any folder: click a part of the path above it, double-click a folder to go into it, or click the empty part of the path to type one. The sync button beside the path ties the tree and the active terminal together, as Dolphin does with its terminal panel: a folder clicked in the tree becomes the terminal's folder, and a `cd` in the terminal moves the tree. The tree only sends `cd` when the shell is at an idle prompt, and the shell keeps it out of its history.
 
-Ctrl+C copies when terminal text is selected and interrupts otherwise; the selection stays until you type or press Escape. Ctrl+V pastes. Ctrl+R is the shell's own reverse search.
+Ctrl+C copies when terminal text is selected and interrupts otherwise; the selection stays until you type or press Escape. Ctrl+V pastes. Ctrl+Insert and Shift+Insert copy and paste as in Windows Terminal; Ctrl+Insert never interrupts, so selection readers such as Phevere use it. Ctrl+R is the shell's own reverse search.
 
 On Windows the prompt also takes PowerShell and cmd commands: `Get-Process | Where-Object CPU -gt 100` runs in PowerShell, `copy`, `del` and `mklink` run in cmd, and `C:\Users\me` works as a path. Start a line with `pwsh:`, `cmd:` or `zsh:` to choose the system yourself. In Settings (Ctrl+,), the Commands page sets which systems take part, their order when a name exists in more than one, the prefixes, and names that always go to one system. Typing `byndery-route <line>` in the terminal shows where a line would run and which rule decided it.
 

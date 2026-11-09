@@ -535,6 +535,19 @@ export class TermView {
         e.preventDefault()
         return false
       }
+      // Ctrl+Insert copies and Shift+Insert pastes, as in Windows Terminal and
+      // conhost. Ctrl+Insert never interrupts, which is why selection readers
+      // such as Phevere send it to terminals instead of Ctrl+C.
+      if (e.code === 'Insert' && e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) {
+        if (x.hasSelection()) api.clipboard.write(x.getSelection())
+        e.preventDefault()
+        return false
+      }
+      if (e.code === 'Insert' && e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        e.preventDefault()
+        void api.clipboard.read().then((t) => t && x.paste(t))
+        return false
+      }
       if (e.key === 'Escape' && !mod && !e.shiftKey && !e.altKey && x.hasSelection()) {
         x.clearSelection()
         e.preventDefault()
