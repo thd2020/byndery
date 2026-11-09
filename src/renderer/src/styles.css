@@ -1,11 +1,17 @@
-/* byndery: warm neutrals, one mint accent taken from the icon, the system UI
-   font for chrome and a monospace face for code and the terminal. Colours are
-   tokens on :root and follow the operating system's light or dark setting. */
+/* byndery: warm neutrals, one mint accent taken from the icon, a serif for
+   the chrome and for prose, and a monospace face for code and the terminal.
+   Colours are tokens on :root and follow the operating system's light or dark
+   setting.
+
+   The serif is Source Serif 4, bundled so every platform gets the same face.
+   Its optical-size axis switches to the caption design at UI sizes, which
+   keeps 12 to 13 px labels sturdy. Chinese falls back to the system's Song
+   or Source Han Serif. */
 
 :root {
-  --font-ui: 'Segoe UI Variable Text', 'Segoe UI', system-ui, -apple-system, 'Noto Sans', sans-serif;
+  --font-ui: 'Source Serif 4 Variable', 'Source Han Serif SC', 'Noto Serif CJK SC', 'Songti SC', SimSun, ui-serif, Georgia, serif;
   --font-mono: 'Cascadia Mono', 'Cascadia Code', 'SF Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace;
-  --font-prose: 'Segoe UI Variable Text', 'Segoe UI', system-ui, -apple-system, 'Noto Sans', sans-serif;
+  --font-prose: var(--font-ui);
   --ui-size: 13px;
   --code-size: 13px;
   --row: 22px;
@@ -72,6 +78,7 @@ body {
   background: var(--bg-chrome);
   color: var(--text);
   font: var(--ui-size) / 1.4 var(--font-ui);
+  font-optical-sizing: auto;
   -webkit-font-smoothing: antialiased;
   user-select: none;
 }
@@ -638,7 +645,6 @@ body.editor-max #editor {
 .term {
   position: absolute;
   inset: 0;
-  padding: 6px 0 0 16px;
   visibility: hidden;
 }
 
@@ -655,13 +661,19 @@ body.editor-max #editor {
   pointer-events: none;
 }
 
+/* Padding goes on .xterm, not on .term: the fit addon subtracts the xterm
+   element's padding but counts all of its parent's width as usable. */
 .term .xterm {
   height: 100%;
+  padding: 6px 10px 0 16px;
+  background: var(--bg-pane);
 }
 
-.xterm .xterm-viewport {
-  scrollbar-width: thin;
-  scrollbar-color: var(--line-strong) transparent;
+/* xterm 6 draws its own scrollbar; the viewport's default black would show
+   through the padding above. */
+.term .xterm .xterm-viewport {
+  background-color: var(--bg-pane) !important;
+  scrollbar-width: none;
 }
 
 /* Command marks sit in the left padding beside each prompt: mint when the

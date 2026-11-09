@@ -22,6 +22,7 @@
     "e2e": "node test/e2e.mjs"
   },
   "dependencies": {
+    "@fontsource-variable/source-serif-4": "^5.3.1",
     "chokidar": "^4.0.3",
     "node-pty": "^1.1.0"
   },
