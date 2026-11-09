@@ -1,7 +1,7 @@
 // Regenerates the screenshots in this folder from the running app.
 //   npm run build && node docs/design.assets/capture.mjs
 // It opens byndery on this repository, runs a few commands in the terminal,
-// opens the design memo, and saves the shots next to this script.
+// opens a source file and the settings, and saves the shots next to this script.
 
 import { _electron } from 'playwright-core'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
@@ -55,7 +55,7 @@ await run('ver')
 await run('sleep 2.4')
 await run('ls')
 // The command memory, searched by text that appears only in an output.
-await win.keyboard.press('Control+R')
+await win.keyboard.press('Control+K')
 await win.waitForSelector('.history:not([hidden])')
 await win.keyboard.type('十一月')
 await win.waitForTimeout(500)
@@ -66,13 +66,21 @@ await win.waitForTimeout(200)
 
 const term = await win.locator('#terminals').boundingBox()
 await win.screenshot({ path: join(here, 'prompt.png'), clip: { x: term.x, y: term.y + 32, width: term.width, height: 470 } })
-await win.locator('.row', { hasText: 'docs' }).first().click()
-await win.locator('.row', { hasText: 'design.md' }).first().dblclick()
+// Back to the repository, with the tree synced to the terminal.
+await run(`cd ${msysPath(repo)}`)
+await win.locator('#follow-button').click()
+await win.locator('.row.dir', { hasText: 'src' }).first().click()
+await win.waitForTimeout(600)
+await win.locator('.row.dir', { hasText: 'main' }).first().click()
+await win.waitForTimeout(600)
+await win.locator('.row', { hasText: 'pty.ts' }).first().dblclick()
 await win.waitForTimeout(800)
 await win.evaluate(() => window.__byndery.terms.active.focus())
 await win.waitForTimeout(300)
 
 await win.screenshot({ path: join(here, 'overview-light.png') })
+const side = await win.locator('#sidebar').boundingBox()
+await win.screenshot({ path: join(here, 'tree.png'), clip: { x: side.x, y: side.y, width: side.width, height: 420 } })
 
 await win.emulateMedia({ colorScheme: 'dark' })
 await win.waitForTimeout(500)
@@ -80,12 +88,20 @@ await win.screenshot({ path: join(here, 'overview-dark.png') })
 await win.emulateMedia({ colorScheme: 'light' })
 
 await win.keyboard.press('Control+Comma')
-await win.waitForSelector('.sheet:not([hidden]) input')
-await win.waitForTimeout(200)
-const sheet = await win.locator('.sheet').boundingBox()
-await win.screenshot({ path: join(here, 'settings.png'), clip: { x: sheet.x - 16, y: sheet.y - 8, width: sheet.width + 32, height: sheet.height + 24 } })
+await win.waitForSelector('.settings:not([hidden])')
+await win.locator('.settings-nav-item', { hasText: 'Commands' }).click()
+await win.locator('[data-focus-key="route-try"]').fill('Get-ChildItem | Sort-Object Length')
+await win.waitForFunction(() => document.querySelector('.route-result')?.textContent.includes('PowerShell'), null, { timeout: 15000 })
+const page = await win.locator('.settings').boundingBox()
+await win.screenshot({ path: join(here, 'settings.png'), clip: page })
+await win.locator('.settings-nav-item.indent', { hasText: 'zsh' }).click()
+await win.waitForTimeout(300)
+await win.screenshot({ path: join(here, 'settings-profile.png'), clip: page })
+await win.locator('.settings-nav-item', { hasText: 'Keyboard' }).click()
+await win.waitForTimeout(300)
+await win.screenshot({ path: join(here, 'settings-keys.png'), clip: page })
 
 await app.close()
 rmSync(profile, { recursive: true, force: true })
 rmSync(demo, { recursive: true, force: true })
-console.log('saved overview-light.png, overview-dark.png, prompt.png, history.png and settings.png')
+console.log('saved overview-light.png, overview-dark.png, prompt.png, history.png, tree.png, settings.png, settings-profile.png and settings-keys.png')

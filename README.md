@@ -2,15 +2,19 @@
 
 <img src="README.assets/byndery-icon.png" width="96" alt="The byndery icon: a forward-leaning lowercase b with a plum stem and a hollow mint bowl that stops short of the stem, the Holarky family letter">
 
-byndery is a workspace to use alongside terminal coding agents such as Claude Code and Codex. It puts a real terminal, a file tree and an editor for the files an agent writes (Markdown first) in one window, and links them: a path in terminal output opens in the editor, the tree follows the shell's folder, a file an agent rewrites reloads in the editor with the change highlighted, and a selection in the editor goes to the agent as context.
+byndery is a workspace to use alongside terminal coding agents such as Claude Code and Codex. It puts a real terminal, a file tree and an editor in one window, and links them: a path in terminal output opens in the editor, the tree and the shell can share one folder, a file an agent rewrites reloads in the editor with the change highlighted, and a selection in the editor goes to the agent as context. The editor handles whatever the agent touches, code, configuration or notes alike.
 
 The name comes from a bindery, the workshop where loose sheets are sewn into one book.
 
-![Screenshot of byndery with the file tree, a zsh terminal with the Powerlevel10k prompt, and a rendered Markdown file](docs/design.assets/overview-light.png)
+![Screenshot of byndery with the file tree and its path bar, a zsh terminal with the rainbow Powerlevel10k prompt, and a TypeScript file in the editor](docs/design.assets/overview-light.png)
 
 ## Recent changes
 
-- **2026-11-09.** Command memory: byndery keeps every command with its output, folder, exit code and time, and Ctrl+R searches all of it. Secrets are redacted before anything is stored, and Settings can switch it off or clear it.
+- **2026-11-09.** Settings is now a full window, organised the way Windows Terminal and Konsole organise theirs: profiles for every shell byndery finds, each inheriting from Profile defaults, a reset arrow on every changed value, editable key bindings, and `settings.json` that can be edited by hand. The Commands page sets the order in which zsh, PowerShell and cmd are asked, the prefixes, and names that always go to one system, and shows where a typed line would run.
+- **2026-11-09.** The prompt is Powerlevel10k's full rainbow style, drawn with MesloLGS NF, which `npm install` now fetches.
+- **2026-11-09.** The file tree can show any folder, through a path bar above it, and its sync button ties it to the terminal both ways.
+- **2026-11-09.** New keys: Ctrl+T and Ctrl+W open and close terminals, or files in the editor; Ctrl+K searches the command memory, and Ctrl+R is the shell's own search again; F1 opens the command list. Ctrl+Up and Ctrl+Down now outline the command they select. A terminal selection no longer disappears when another program copies it.
+- **2026-11-09.** Command memory: byndery keeps every command with its output, folder, exit code and time, and Ctrl+K searches all of it. Secrets are redacted before anything is stored, and Settings can switch it off or clear it.
 - **2026-11-09.** First working build: terminal, file tree and editor in one window. On Windows the terminal is zsh with Powerlevel10k, suggestions and syntax highlighting on a bundled MSYS2, and the same prompt also runs PowerShell cmdlets, cmd built-ins and paths written as `C:\` or `/c/`. The design and the reasons for it are in [`docs/design.md`](docs/design.md).
 
 ## Running it
