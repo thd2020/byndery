@@ -8,6 +8,7 @@ import * as term from './pty'
 import * as files from './files'
 import * as git from './git'
 import * as settings from './settings'
+import * as history from './history'
 import { normalize } from '../shared/paths'
 
 // Window state and the last workspace live in Electron's userData folder,
@@ -179,6 +180,14 @@ function registerIpc(): void {
   ipcMain.on('fs:reveal', (_e, p: string) => shell.showItemInFolder(p.replace(/\//g, process.platform === 'win32' ? '\\' : '/')))
   ipcMain.on('fs:openExternal', (_e, p: string) => shell.openPath(p))
 
+  // The renderer sends every finished command; the setting decides whether it is kept.
+  ipcMain.on('history:record', (_e, r) => {
+    if (settings.get().memory) history.record(r)
+  })
+  ipcMain.handle('history:search', (_e, q) => history.search(q))
+  ipcMain.handle('history:output', (_e, id: number) => history.output(id))
+  ipcMain.handle('history:remove', (_e, id: number) => history.remove(id))
+  ipcMain.handle('history:clear', () => history.clear())
   ipcMain.handle('settings:get', () => settings.get())
   ipcMain.handle('settings:set', (_e, patch) => settings.set(patch))
 

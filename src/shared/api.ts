@@ -2,6 +2,7 @@
 // exposes an object of type `Bridge` as `window.byndery`.
 
 import type { MsysMounts } from './paths'
+import type { CommandRecord, HistoryEntry, HistoryQuery } from './history'
 
 export interface TermInfo {
   id: number
@@ -92,6 +93,13 @@ export interface Bridge {
     write(text: string): void
     read(): Promise<string>
   }
+  history: {
+    record(r: CommandRecord): void
+    search(q: HistoryQuery): Promise<HistoryEntry[]>
+    output(id: number): Promise<{ text: string; truncated: boolean } | null>
+    remove(id: number): Promise<void>
+    clear(): Promise<void>
+  }
   settings: {
     get(): Promise<Settings>
     set(patch: Partial<Settings>): Promise<Settings>
@@ -107,10 +115,13 @@ export interface Bridge {
 export interface Settings {
   /** Which command languages the Windows prompt accepts. */
   commands: { linux: boolean; powershell: boolean; cmd: boolean }
+  /** Keep every command with its output in the command memory. */
+  memory: boolean
 }
 
 export const DEFAULT_SETTINGS: Settings = {
-  commands: { linux: true, powershell: true, cmd: true }
+  commands: { linux: true, powershell: true, cmd: true },
+  memory: true
 }
 
 export interface MenuItem {

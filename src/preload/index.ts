@@ -49,6 +49,13 @@ const bridge: Bridge = {
     write: (t) => ipcRenderer.send('clip:write', t),
     read: () => ipcRenderer.invoke('clip:read')
   },
+  history: {
+    record: (r) => ipcRenderer.send('history:record', r),
+    search: (q) => ipcRenderer.invoke('history:search', q),
+    output: (id) => ipcRenderer.invoke('history:output', id),
+    remove: (id) => ipcRenderer.invoke('history:remove', id),
+    clear: () => ipcRenderer.invoke('history:clear')
+  },
   settings: {
     get: () => ipcRenderer.invoke('settings:get'),
     set: (patch) => ipcRenderer.invoke('settings:set', patch),

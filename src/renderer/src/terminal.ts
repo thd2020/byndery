@@ -6,6 +6,10 @@ import { Unicode11Addon } from '@xterm/addon-unicode11'
 import '@xterm/xterm/css/xterm.css'
 import type { TermInfo } from '../../shared/api'
 import { findPaths } from '../../shared/links'
+import { unescapeCommandLine } from '../../shared/history'
+
+/** One id per window load; with the terminal id it names a session in the command memory. */
+const RUN_ID = Math.random().toString(36).slice(2, 8)
 import { basename, fromMsys, join, normalize, isWindowsPath, relativeFrom, shellQuote, toMsys } from '../../shared/paths'
 import { api, Emitter, h, icon, ICON, isMac } from './bridge'
 import { terminalTheme, onThemeChange } from './theme'
@@ -55,6 +59,16 @@ export class TermView {
   status: Status = 'idle'
   private fit = new FitAddon()
   private marks: Mark[] = []
+  /** The command in flight, between OSC 133 B and D. */
+  private run: {
+    promptEnd?: IMarker
+    promptEndX?: number
+    start?: IMarker
+    startX?: number
+    startedAt?: number
+    cwd?: string
+    command?: string
+  } = {}
   private resizeTimer = 0
   private ready: Promise<void>
 
@@ -237,10 +251,24 @@ export class TermView {
         const marker = x.registerMarker(0)
         if (marker) this.marks.push({ marker })
         if (this.marks.length > 2000) this.marks.splice(0, 500)
+      } else if (kind === 'B') {
+        // Where typing starts, so a shell that does not send 633;E still has
+        // its command line read back from the screen.
+        const b = x.buffer.active
+        this.run = { promptEnd: x.registerMarker(0), promptEndX: b.cursorX }
       } else if (kind === 'C') {
         this.setStatus('busy')
+        const b = x.buffer.active
+        this.run = {
+          ...this.run,
+          start: x.registerMarker(0),
+          startX: b.cursorX,
+          startedAt: Date.now(),
+          cwd: this.cwd
+        }
       } else if (kind === 'D') {
         const code = Number(arg ?? 0)
+        this.remember(code)
         const mark = this.marks[this.marks.length - 1]
         if (mark && !mark.marker.isDisposed) {
           mark.exit = code
@@ -255,6 +283,60 @@ export class TermView {
       }
       return true
     })
+    // OSC 633;E: the command line as the shell saw it, for the command memory.
+    x.parser.registerOscHandler(633, (data) => {
+      if (data.startsWith('E;')) this.run = { ...this.run, command: unescapeCommandLine(data.slice(2)) }
+      return true
+    })
+  }
+
+  /** Text of buffer rows [from, to), with soft-wrapped rows joined to the line above. */
+  private rows(from: number, to: number, firstX = 0): string {
+    const b = this.xterm.buffer.active
+    const out: string[] = []
+    for (let i = Math.max(0, from); i < to; i++) {
+      const l = b.getLine(i)
+      if (!l) continue
+      let s = l.translateToString(true)
+      if (i === from && firstX) s = s.slice(firstX)
+      if (l.isWrapped && out.length) out[out.length - 1] += s
+      else out.push(s)
+    }
+    return out.join('\n')
+  }
+
+  /** Sends the finished command, its output and its timing to the command memory. */
+  private remember(exit: number): void {
+    const r = this.run
+    this.run = {}
+    if (!this.info || !r.start || r.startedAt == null) return
+    const b = this.xterm.buffer.active
+    // Shells print D at the start of the line after the output.
+    const end = b.baseY + b.cursorY + (b.cursorX > 0 ? 1 : 0)
+    let command = r.command
+    if (command == null && r.promptEnd && !r.promptEnd.isDisposed && !r.start.isDisposed) {
+      command = this.rows(r.promptEnd.line, r.start.line + (r.startX ? 1 : 0), r.promptEndX).trim()
+    }
+    if (!command) return
+    const output = r.start.isDisposed ? '' : this.rows(r.start.line, end, r.startX).replace(/\s+$/, '')
+    api.history.record({
+      command,
+      cwd: r.cwd ?? this.cwd,
+      exit,
+      startedAt: r.startedAt,
+      durationMs: Date.now() - r.startedAt,
+      output,
+      truncated: r.start.isDisposed,
+      shell: this.info.shell,
+      session: this.session
+    })
+    r.start.dispose()
+    r.promptEnd?.dispose()
+  }
+
+  /** The id the command memory files this terminal's commands under. */
+  get session(): string {
+    return `${RUN_ID}-${this.info?.id ?? 0}`
   }
 
   /** Scrolls to the previous (-1) or next (+1) prompt. */
