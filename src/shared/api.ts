@@ -3,10 +3,14 @@
 
 import type { MsysMounts } from './paths'
 import type { CommandRecord, HistoryEntry, HistoryQuery } from './history'
+import type { SettingsState } from './settings'
 
 export interface TermInfo {
   id: number
   shell: string
+  /** The profile it was started from. */
+  profile: string
+  profileName: string
   cwd: string
   integrated: boolean
   msys?: MsysMounts
@@ -62,7 +66,8 @@ export interface Bridge {
     saveAs(defaultPath: string): Promise<string | null>
   }
   term: {
-    create(cwd: string, cols: number, rows: number): Promise<TermInfo>
+    /** Starts a terminal from a profile, or the default profile when none is given. */
+    create(cwd: string, cols: number, rows: number, profile?: string): Promise<TermInfo>
     write(id: number, data: string): void
     ack(id: number, chars: number): void
     resize(id: number, cols: number, rows: number): void
@@ -105,27 +110,20 @@ export interface Bridge {
     clear(): Promise<void>
   }
   settings: {
-    get(): Promise<Settings>
-    set(patch: Partial<Settings>): Promise<Settings>
-    onChange(cb: (s: Settings) => void): void
+    get(): Promise<SettingsState>
+    /** Sets one value in the user's settings.json, by key path. */
+    set(path: string[], value: unknown): Promise<SettingsState>
+    /** Removes a value from the user's layer, so the inherited one applies again. */
+    reset(path: string[]): Promise<SettingsState>
+    onChange(cb: (s: SettingsState) => void): void
+    /** Which system the byndery prompt would run a line in, and the rule behind it. */
+    explain(line: string): Promise<{ system: string; reason: string } | null>
   }
   menu(items: MenuItem[]): Promise<string | null>
   /** Native message box; resolves to the index of the button pressed. */
   confirm(message: string, detail: string, buttons: string[]): Promise<number>
   devtools(): void
   sys: { windowsBuild?: number; home: string }
-}
-
-export interface Settings {
-  /** Which command languages the Windows prompt accepts. */
-  commands: { linux: boolean; powershell: boolean; cmd: boolean }
-  /** Keep every command with its output in the command memory. */
-  memory: boolean
-}
-
-export const DEFAULT_SETTINGS: Settings = {
-  commands: { linux: true, powershell: true, cmd: true },
-  memory: true
 }
 
 export interface MenuItem {

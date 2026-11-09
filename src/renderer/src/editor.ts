@@ -45,6 +45,14 @@ const isMarkdown = (p: string): boolean => /.(md|markdown|mdx)$/i.test(p)
 
 const languageSlot = new Compartment()
 const modeSlot = new Compartment()
+const tabSlot = new Compartment()
+const wrapSlot = new Compartment()
+
+export interface EditorOptions {
+  tabSize: number
+  wordWrap: boolean
+  markdownPreview: boolean
+}
 
 const highlight = HighlightStyle.define([
   { tag: [t.keyword, t.controlKeyword, t.moduleKeyword, t.operatorKeyword, t.definitionKeyword], color: 'var(--syn-keyword)' },
@@ -95,6 +103,7 @@ export class EditorArea {
   readonly activeChanged = new Emitter<string | null>()
   readonly visibilityChanged = new Emitter<boolean>()
   root = ''
+  private options: EditorOptions = { tabSize: 4, wordWrap: false, markdownPreview: true }
 
   constructor(
     private section: HTMLElement,
@@ -123,7 +132,8 @@ export class EditorArea {
       highlightSelectionMatches(),
       search({ top: true }),
       indentUnit.of('  '),
-      EditorState.tabSize.of(4),
+      tabSlot.of(EditorState.tabSize.of(this.options.tabSize)),
+      wrapSlot.of(this.options.wordWrap ? EditorView.lineWrapping : []),
       syntaxHighlighting(highlight),
       flashField,
       keymap.of([...closeBracketsKeymap, ...defaultKeymap, ...searchKeymap, ...historyKeymap, ...foldKeymap, indentWithTab]),
@@ -152,6 +162,18 @@ export class EditorArea {
       ]
     }
     return [lineNumbers(), highlightActiveLineGutter(), highlightActiveLine()]
+  }
+
+  /** Settings changed: tab size and wrapping apply to every open tab; Markdown preview to new ones. */
+  configure(o: EditorOptions): void {
+    const changed = o.tabSize !== this.options.tabSize || o.wordWrap !== this.options.wordWrap
+    this.options = o
+    if (!changed) return
+    const effects = [tabSlot.reconfigure(EditorState.tabSize.of(o.tabSize)), wrapSlot.reconfigure(o.wordWrap ? EditorView.lineWrapping : [])]
+    for (const tab of this.tabs) {
+      if (tab === this.active) this.view.dispatch({ effects })
+      else tab.state = tab.state.update({ effects }).state
+    }
   }
 
   get visible(): boolean {
@@ -215,7 +237,7 @@ export class EditorArea {
       mtime: o.mtime,
       preview: o.preview,
       markdown: isMarkdown(path),
-      raw: false,
+      raw: !this.options.markdownPreview,
       scroll: 0,
       el: h('div', 'tab')
     }

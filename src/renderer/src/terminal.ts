@@ -5,6 +5,7 @@ import { WebLinksAddon } from '@xterm/addon-web-links'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
 import '@xterm/xterm/css/xterm.css'
 import type { TermInfo } from '../../shared/api'
+import type { Profile, SettingsState } from '../../shared/settings'
 import { findPaths } from '../../shared/links'
 import { unescapeCommandLine } from '../../shared/history'
 
@@ -40,13 +41,24 @@ function statCached(p: string): Promise<{ dir: boolean } | null> {
   return pr
 }
 
-const monoFamily = (): string =>
-  getComputedStyle(document.documentElement).getPropertyValue('--font-term').replace(/['"]/g, '').trim()
+/** The monospace fallbacks after a profile's own font. */
+const monoFallback = (): string =>
+  getComputedStyle(document.documentElement).getPropertyValue('--font-mono').replace(/['"]/g, '').trim()
 
-const fontReady: Promise<unknown> = (() => {
-  const first = monoFamily().split(',')[0].trim()
-  return Promise.all([document.fonts.load(`13px "${first}"`), document.fonts.load(`bold 13px "${first}"`)]).catch(() => undefined)
-})()
+const familyFor = (font: string): string => [font.trim(), monoFallback()].filter(Boolean).join(', ')
+
+// A canvas does not wait for a font the way the DOM does, so each face is
+// loaded before the WebGL renderer draws its glyph atlas with it.
+const loadedFonts = new Map<string, Promise<unknown>>()
+function fontReady(font: string): Promise<unknown> {
+  const first = font.split(',')[0].trim()
+  let p = loadedFonts.get(first)
+  if (!p) {
+    p = Promise.all([document.fonts.load(`13px "${first}"`), document.fonts.load(`bold 13px "${first}"`)]).catch(() => undefined)
+    loadedFonts.set(first, p)
+  }
+  return p
+}
 
 export class TermView {
   private disposed = false
@@ -71,30 +83,36 @@ export class TermView {
   private resizeTimer = 0
   private ready: Promise<void>
 
+  /** The profile this terminal was started from. */
+  profileId: string
+
   constructor(
     private mgr: TerminalManager,
     host: HTMLElement,
-    startCwd: string
+    startCwd: string,
+    profileId?: string
   ) {
+    this.profileId = profileId ?? mgr.defaultProfile()?.id ?? ''
     this.cwd = startCwd
     this.el = h('div', 'term')
     host.append(this.el)
     this.tab = h('div', 'tab')
 
     const build = api.sys.windowsBuild
+    const p = mgr.profile(this.profileId)
     this.xterm = new Terminal({
       allowProposedApi: true,
-      fontFamily: monoFamily(),
-      fontSize: mgr.fontSize,
-      lineHeight: 1.25,
-      cursorBlink: true,
-      cursorStyle: 'bar',
+      fontFamily: familyFor(p?.fontFamily ?? ''),
+      fontSize: (p?.fontSize ?? 13) + mgr.zoom,
+      lineHeight: p?.lineHeight ?? 1.25,
+      cursorBlink: p?.cursorBlink ?? true,
+      cursorStyle: p?.cursorStyle ?? 'bar',
       cursorInactiveStyle: 'outline',
-      scrollback: 10000,
+      scrollback: p?.scrollback ?? 10000,
       macOptionIsMeta: true,
       drawBoldTextInBrightColors: false,
       minimumContrastRatio: 1,
-      theme: terminalTheme(),
+      theme: terminalTheme(p?.colorScheme),
       windowsPty: build ? { backend: 'conpty', buildNumber: build } : undefined,
       linkHandler: {
         // OSC 8 hyperlinks: file:// opens in the editor, the web in the browser.
@@ -114,7 +132,8 @@ export class TermView {
     // The WebGL renderer draws glyphs into a texture atlas from a canvas, and a
     // canvas does not wait for a system font the way the DOM does. Load the
     // font first, or the atlas fills with the fallback face.
-    void fontReady.then(() => {
+    this.paintBackground()
+    void fontReady(this.xterm.options.fontFamily ?? '').then(() => {
       if (this.disposed) return
       try {
         const gl = new WebglAddon()
@@ -131,13 +150,25 @@ export class TermView {
     this.registerDrop()
     this.el.addEventListener('contextmenu', (e) => {
       e.preventDefault()
+      // With "right click pastes", the menu is on Shift+right click.
+      if (this.mgr.profile(this.profileId)?.rightClickPastes && !e.shiftKey) {
+        void api.clipboard.read().then((t) => t && this.xterm.paste(t))
+        return
+      }
       void this.contextMenu()
+    })
+    this.xterm.onSelectionChange(() => {
+      if (this.mgr.profile(this.profileId)?.copyOnSelect && this.xterm.hasSelection()) api.clipboard.write(this.xterm.getSelection())
     })
     this.xterm.textarea?.addEventListener('focus', () => mgr.setActive(this))
 
     this.fit.fit()
-    this.ready = api.term.create(startCwd, this.xterm.cols, this.xterm.rows).then((info) => {
+    this.ready = api.term.create(startCwd, this.xterm.cols, this.xterm.rows, profileId).then((info) => {
       this.info = info
+      if (info.profile !== this.profileId) {
+        this.profileId = info.profile
+        this.applySettings()
+      }
       mgr.byId.set(info.id, this)
       this.xterm.onData((d) => {
         if (this.jumpLine != null) this.clearJump()
@@ -163,7 +194,38 @@ export class TermView {
   }
 
   applyTheme(): void {
-    this.xterm.options.theme = terminalTheme()
+    this.xterm.options.theme = terminalTheme(this.mgr.profile(this.profileId)?.colorScheme)
+    this.paintBackground()
+  }
+
+  /** The padding around the grid takes the scheme's background too. */
+  private paintBackground(): void {
+    const bg = this.xterm.options.theme?.background
+    if (bg) this.el.style.setProperty('--term-bg', bg)
+  }
+
+  /** Applies the profile's current settings; called when settings change. */
+  applySettings(): void {
+    const p = this.mgr.profile(this.profileId)
+    if (!p) return
+    const o = this.xterm.options
+    const family = familyFor(p.fontFamily)
+    const size = Math.max(6, p.fontSize + this.mgr.zoom)
+    const set = (): void => {
+      if (this.disposed) return
+      if (o.fontFamily !== family) o.fontFamily = family
+      if (o.fontSize !== size) o.fontSize = size
+      if (o.lineHeight !== p.lineHeight) o.lineHeight = p.lineHeight
+      const weight = p.fontWeight as Terminal['options']['fontWeight']
+      if (o.fontWeight !== weight) o.fontWeight = weight
+      if (o.cursorStyle !== p.cursorStyle) o.cursorStyle = p.cursorStyle
+      if (o.cursorBlink !== p.cursorBlink && this.status !== 'exited') o.cursorBlink = p.cursorBlink
+      if (o.scrollback !== p.scrollback) o.scrollback = p.scrollback
+      this.applyTheme()
+      this.scheduleFit()
+    }
+    if (o.fontFamily !== family) void fontReady(family).then(set)
+    else set()
   }
 
   exited(code: number): void {
@@ -545,7 +607,9 @@ export class TerminalManager {
   readonly commandFinished = new Emitter<{ term: TermView; code: number }>()
   readonly activeChanged = new Emitter<TermView | null>()
   root = ''
-  fontSize = 13
+  /** Ctrl+= and Ctrl+-: points added to every profile's font size, for this window. */
+  zoom = 0
+  settings: SettingsState | null = null
   /** Set by the app: true for keys that belong to an app action rather than the shell. */
   claimsKey: (e: KeyboardEvent) => boolean = () => false
 
@@ -565,8 +629,26 @@ export class TerminalManager {
     onThemeChange(() => this.views.forEach((v) => v.applyTheme()))
   }
 
-  create(cwd?: string): TermView {
-    const v = new TermView(this, this.host, cwd ?? this.active?.cwd ?? this.root)
+  profile(id: string): Profile | undefined {
+    return this.settings?.profiles.find((p) => p.id === id) ?? this.defaultProfile()
+  }
+
+  /** The profile new terminals start from. */
+  defaultProfile(): Profile | undefined {
+    const s = this.settings
+    if (!s) return undefined
+    const visible = s.profiles.filter((p) => !p.hidden)
+    return visible.find((p) => p.id === s.effective.general.defaultProfile) ?? visible[0] ?? s.profiles[0]
+  }
+
+  /** New settings: every open terminal takes its profile's values. */
+  applySettings(s: SettingsState): void {
+    this.settings = s
+    for (const v of this.views) v.applySettings()
+  }
+
+  create(cwd?: string, profileId?: string): TermView {
+    const v = new TermView(this, this.host, cwd ?? this.active?.cwd ?? this.root, profileId)
     this.views.push(v)
     v.tab.addEventListener('mousedown', (e) => {
       if (e.button === 1) {

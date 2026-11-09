@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { homedir } from 'node:os'
 import { readFileSync, writeFileSync, existsSync, statSync, rmSync, mkdirSync } from 'node:fs'
-import { defaultShell, type ShellDirs } from './shell'
+import { explainRoute, resolveProfiles, specFor, type ShellDirs } from './shell'
 import * as term from './pty'
 import * as files from './files'
 import * as git from './git'
@@ -164,9 +164,21 @@ function registerIpc(): void {
     return ws
   })
 
-  ipcMain.handle('term:create', (e, cwd: string, cols: number, rows: number) => {
+  ipcMain.handle('term:create', (e, cwd: string, cols: number, rows: number, profileId?: string) => {
     saveState({ workspace: cwd })
-    return term.createTerminal(e.sender, defaultShell(shellDirs()), cwd, cols, rows)
+    const dirs = shellDirs()
+    const s = settings.get()
+    const profiles = resolveProfiles(dirs, s)
+    const p =
+      profiles.find((x) => x.id === profileId) ??
+      profiles.find((x) => x.id === s.general.defaultProfile && !x.hidden) ??
+      profiles.find((x) => !x.hidden) ??
+      profiles[0]
+    // "" starts in the tree's folder, "~" at home, anything else in that folder if it exists.
+    let start = cwd
+    if (p.startIn === '~') start = normalize(homedir())
+    else if (p.startIn && existsSync(p.startIn) && statSync(p.startIn).isDirectory()) start = normalize(p.startIn)
+    return term.createTerminal(e.sender, specFor(dirs, p), start, cols, rows, { id: p.id, name: p.name })
   })
   ipcMain.on('term:write', (_e, id: number, data: string) => term.write(id, data))
   ipcMain.on('term:ack', (_e, id: number, n: number) => term.ack(id, n))
@@ -188,14 +200,16 @@ function registerIpc(): void {
 
   // The renderer sends every finished command; the setting decides whether it is kept.
   ipcMain.on('history:record', (_e, r) => {
-    if (settings.get().memory) history.record(r)
+    if (settings.get().history.enabled) history.record(r)
   })
   ipcMain.handle('history:search', (_e, q) => history.search(q))
   ipcMain.handle('history:output', (_e, id: number) => history.output(id))
   ipcMain.handle('history:remove', (_e, id: number) => history.remove(id))
   ipcMain.handle('history:clear', () => history.clear())
-  ipcMain.handle('settings:get', () => settings.get())
-  ipcMain.handle('settings:set', (_e, patch) => settings.set(patch))
+  ipcMain.handle('settings:get', () => settings.state())
+  ipcMain.handle('settings:set', (_e, path: string[], value: unknown) => settings.set(path, value))
+  ipcMain.handle('settings:reset', (_e, path: string[]) => settings.reset(path))
+  ipcMain.handle('settings:explain', (_e, line: string) => explainRoute(shellDirs(), line))
 
   ipcMain.handle('git:status', (_e, root: string) => git.status(root))
   ipcMain.handle('git:show', (_e, p: string) => git.show(p))
@@ -243,6 +257,9 @@ protocol.registerSchemesAsPrivileged([
 
 app.whenReady().then(() => {
   saved = loadState()
+  settings.setProfileSource((s) => resolveProfiles(shellDirs(), s))
+  // The theme setting drives Chromium's prefers-color-scheme and the system dialogs.
+  settings.onApply((s) => (nativeTheme.themeSource = s.general.theme))
   settings.load()
   protocol.handle('byndery-file', (req) => {
     let p = decodeURIComponent(new URL(req.url).pathname)

@@ -27,7 +27,7 @@ const sessions = new Map<number, Session>()
 let conptyDllWorks = true
 let nextId = 1
 
-export function createTerminal(owner: WebContents, shell: ShellSpec, cwd: string, cols: number, rows: number): TermInfo {
+export function createTerminal(owner: WebContents, shell: ShellSpec, cwd: string, cols: number, rows: number, profile: { id: string; name: string }): TermInfo {
   const id = nextId++
   const env: Record<string, string> = { ...(process.env as Record<string, string>), ...shell.env }
   env.TERM_PROGRAM = 'byndery'
@@ -36,7 +36,7 @@ export function createTerminal(owner: WebContents, shell: ShellSpec, cwd: string
   for (const k of Object.keys(env)) if (env[k] === '') delete env[k]
 
   const proc = spawn(shell, cwd, cols, rows, env)
-  const info: TermInfo = { id, shell: shell.name, cwd, integrated: shell.integrated, msys: shell.msys }
+  const info: TermInfo = { id, shell: shell.name, profile: profile.id, profileName: profile.name, cwd, integrated: shell.integrated, msys: shell.msys }
   const s: Session = { id, proc, owner, pending: '', timer: null, unacked: 0, paused: false, info }
   sessions.set(id, s)
 

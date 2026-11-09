@@ -328,32 +328,85 @@ await step('PowerShell and cmd lines hand their folder, variables and exit code 
   assert.equal(await win.evaluate(() => window.__byndery.terms.active.marks.at(-2).exit), 4)
 })
 
-await step('Settings switch a system off; its prefix still works', async () => {
+await step('Commands settings: systems on and off, order, pins and the route tester', async () => {
   if (process.platform !== 'win32') return
-  await win.keyboard.press('Control+Comma')
-  await waitFor(() => win.locator('.sheet:not([hidden])').count(), 'settings sheet')
-  await shot('06-settings')
-  await win.locator('.sheet-check input[data-key="cmd"]').uncheck()
-  await win.keyboard.press('Escape')
+  const sw = (id) => win.locator(`[data-focus-key="route-on-${id}"]`)
+  const openCommands = async () => {
+    await win.keyboard.press('Control+Comma')
+    await waitFor(() => win.locator('.settings:not([hidden])').count(), 'settings window')
+    await win.locator('.settings-nav-item', { hasText: 'Commands' }).click()
+    await waitFor(() => sw('cmd').count(), 'commands page')
+  }
   const run = async (cmd) => {
     const before = await promptCount()
     await typeInTerminal(cmd)
     await waitFor(async () => (await promptCount()) > before, `prompt after ${cmd}`, 20000)
-    const t = await termText()
-    return since(t, cmd)
+    return since(await termText(), cmd)
   }
+  await openCommands()
+  await shot('06-settings')
+  await sw('cmd').uncheck()
+  await win.keyboard.press('Escape')
   assert.match(await run('ver'), /command not found/)
   assert.match(await run('cmd: ver'), /Microsoft Windows/)
-  await win.keyboard.press('Control+Comma')
-  await shot('07-settings-again')
-  await win.locator('.sheet-check input[data-key="cmd"]').check()
-  await win.locator('.sheet-check input[data-key="powershell"]').uncheck()
-  await win.locator('.sheet-check input[data-key="linux"]').uncheck()
-  assert.ok(await win.locator('.sheet-check input[data-key="cmd"]').isDisabled(), 'the last system cannot be switched off')
-  await win.locator('.sheet-check input[data-key="linux"]').check()
-  await win.locator('.sheet-check input[data-key="powershell"]').check()
+  // The last system on cannot be switched off.
+  await openCommands()
+  await sw('cmd').check()
+  await sw('powershell').uncheck()
+  await sw('linux').uncheck()
+  assert.ok(await sw('cmd').isDisabled(), 'the last system cannot be switched off')
+  await sw('linux').check()
+  await sw('powershell').check()
+  // A pinned name skips the order: hostname is a program in both zsh and Windows.
+  await win.locator('[data-focus-key="pin-new"]').fill('hostname')
+  await win.locator('[data-focus-key="pin-new-system"]').selectOption('powershell')
+  await win.locator('.pin-row.add .text-btn').click()
+  await waitFor(() => win.locator('.pin-name', { hasText: 'hostname' }).count(), 'hostname pinned')
+  // Order: cmd moves to the top.
+  await win.locator('[data-focus-key="route-up-cmd"]').click()
+  await win.locator('[data-focus-key="route-up-cmd"]').click()
+  await waitFor(async () => (await win.locator('.route-item').first().getAttribute('data-sys')) === 'cmd', 'cmd first')
+  // The tester asks the shell itself.
+  await win.locator('[data-focus-key="route-try"]').fill('Get-ChildItem | Sort-Object Length')
+  await waitFor(async () => (await win.locator('.route-result').textContent()).includes('PowerShell'), 'tester says PowerShell', 15000)
+  await win.locator('[data-focus-key="route-try"]').fill('hostname')
+  await waitFor(async () => (await win.locator('.route-result').textContent()).includes('pinned'), 'tester says pinned', 15000)
+  await shot('07-settings-commands')
   await win.keyboard.press('Escape')
+  assert.match(await run('hostname'), /PS hostname/)
   assert.match(await run('ver'), /Microsoft Windows/)
+  const file = JSON.parse(readFileSync(join(userData, 'settings.json'), 'utf8'))
+  assert.deepEqual(file.commands.order.slice(0, 1), ['cmd'])
+  assert.equal(file.commands.overrides.hostname, 'powershell')
+  await win.evaluate(async () => {
+    await window.byndery.settings.reset(['commands'])
+  })
+})
+
+await step('Profile settings apply to open terminals; settings.json edits apply too', async () => {
+  const size = () => win.evaluate(() => window.__byndery.terms.active.xterm.options.fontSize)
+  const before = await size()
+  await win.keyboard.press('Control+Comma')
+  await win.locator('.settings-nav-item', { hasText: 'Profile defaults' }).click()
+  const input = win.locator('[data-focus-key="f-profileDefaults-fontSize"]')
+  await input.fill(String(before + 3))
+  await input.press('Enter')
+  await waitFor(async () => (await size()) === before + 3, 'font size applied to the open terminal')
+  assert.ok(await win.locator('.settings-row', { has: input }).locator('.settings-reset').isVisible(), 'reset shown for a changed value')
+  await win.locator('.settings-row', { has: input }).locator('.settings-reset').click()
+  await waitFor(async () => (await size()) === before, 'font size reset')
+  await win.keyboard.press('Escape')
+  // A hand edit of settings.json applies without a restart; a broken one is reported and changes nothing.
+  const path = join(userData, 'settings.json')
+  writeFileSync(path, '// edited by hand\n{ "profileDefaults": { "cursorStyle": "block", }, }\n')
+  await waitFor(async () => (await win.evaluate(() => window.__byndery.terms.active.xterm.options.cursorStyle)) === 'block', 'hand edit applied')
+  writeFileSync(path, '{ "profileDefaults": { "cursorStyle": "underline" ')
+  await win.keyboard.press('Control+Comma')
+  await waitFor(() => win.locator('.settings-error').count(), 'error banner for a broken file')
+  assert.equal(await win.evaluate(() => window.__byndery.terms.active.xterm.options.cursorStyle), 'block')
+  await win.keyboard.press('Escape')
+  writeFileSync(path, '{}\n')
+  await waitFor(async () => (await win.evaluate(() => window.__byndery.terms.active.xterm.options.cursorStyle)) === 'bar', 'defaults back')
 })
 
 await step('Command history finds output, puts commands back and runs them', async () => {
@@ -388,7 +441,9 @@ await step('Command history finds output, puts commands back and runs them', asy
   await waitFor(async () => (await win.locator('.history-list li.active .history-cmd').textContent())?.includes('ZSH_VERSION'), 'ZSH_VERSION found')
   await win.keyboard.press('Enter')
   await waitFor(async () => (await promptCount()) > before, 'command ran from history')
-  // The secret file's contents were never kept.
+  // The secret file's contents were never kept. The record is written after
+  // the prompt returns, so wait for it rather than for a fixed time.
+  await waitFor(async () => (await win.evaluate(() => window.byndery.history.search({ text: 'cat .env', scope: 'all' }))).length > 0, 'cat .env remembered')
   const leaked = await win.evaluate(async () => {
     const rows = await window.byndery.history.search({ text: 'do-not-store', scope: 'all' })
     const env = (await window.byndery.history.search({ text: 'cat .env', scope: 'all' }))[0]
@@ -396,9 +451,9 @@ await step('Command history finds output, puts commands back and runs them', asy
   })
   assert.deepEqual(leaked, { rows: 0, envOutput: '' })
   // With the memory switched off, nothing new is kept.
-  await win.evaluate(() => window.byndery.settings.set({ memory: false }))
+  await win.evaluate(() => window.byndery.settings.set(['history', 'enabled'], false))
   await run('echo not-remembered-xyz')
-  await win.evaluate(() => window.byndery.settings.set({ memory: true }))
+  await win.evaluate(() => window.byndery.settings.reset(['history']))
   await win.waitForTimeout(200)
   assert.equal((await win.evaluate(() => window.byndery.history.search({ text: 'not-remembered-xyz', scope: 'all' }))).length, 0)
 })

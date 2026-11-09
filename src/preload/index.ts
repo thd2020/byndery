@@ -19,7 +19,7 @@ const bridge: Bridge = {
     saveAs: (defaultPath) => ipcRenderer.invoke('dialog:saveAs', defaultPath)
   },
   term: {
-    create: (cwd, cols, rows) => ipcRenderer.invoke('term:create', cwd, cols, rows),
+    create: (cwd, cols, rows, profile) => ipcRenderer.invoke('term:create', cwd, cols, rows, profile),
     write: (id, data) => ipcRenderer.send('term:write', id, data),
     ack: (id, n) => ipcRenderer.send('term:ack', id, n),
     resize: (id, c, r) => ipcRenderer.send('term:resize', id, c, r),
@@ -60,8 +60,10 @@ const bridge: Bridge = {
   },
   settings: {
     get: () => ipcRenderer.invoke('settings:get'),
-    set: (patch) => ipcRenderer.invoke('settings:set', patch),
-    onChange: (cb) => void ipcRenderer.on('settings:changed', (_e, s) => cb(s))
+    set: (path, value) => ipcRenderer.invoke('settings:set', path, value),
+    reset: (path) => ipcRenderer.invoke('settings:reset', path),
+    onChange: (cb) => void ipcRenderer.on('settings:changed', (_e, s) => cb(s)),
+    explain: (line) => ipcRenderer.invoke('settings:explain', line)
   },
   menu: (items) => ipcRenderer.invoke('menu:popup', items),
   confirm: (m, d, b) => ipcRenderer.invoke('dialog:confirm', m, d, b),

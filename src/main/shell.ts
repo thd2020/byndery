@@ -1,9 +1,10 @@
 import { existsSync } from 'node:fs'
-import { execFileSync } from 'node:child_process'
+import { execFile, execFileSync } from 'node:child_process'
 import { join, dirname } from 'node:path'
 import { homedir } from 'node:os'
 import type { MsysMounts } from '../shared/paths'
 import { isWindowsPath, normalize, toMsys } from '../shared/paths'
+import type { Profile, ProfileEntry, Settings } from '../shared/settings'
 
 export interface ShellSpec {
   /** Short name shown on the terminal tab. */
@@ -91,58 +92,169 @@ function zshEnv(dirs: ShellDirs): Record<string, string> {
 const msysEnv = (env: Record<string, string>): Record<string, string> =>
   Object.fromEntries(Object.entries(env).map(([k, v]) => [k, isWindowsPath(v) ? toMsys(v) : v]))
 
-export function defaultShell(dirs: ShellDirs): ShellSpec {
-  const bashScript = join(dirs.integration, 'bash-integration.sh')
+/** A shell found on this computer, the way Windows Terminal generates profiles for installed shells. */
+interface Detected {
+  id: string
+  name: string
+  spec: ShellSpec
+  routes: boolean
+}
+
+function msysZsh(dirs: ShellDirs, msys: string): ShellSpec {
+  return {
+    name: 'zsh',
+    file: join(msys, 'usr', 'bin', 'zsh.exe'),
+    args: ['-l', '-i'],
+    env: msysEnv({
+      ...zshEnv(dirs),
+      // UCRT64 is the environment MSYS2 recommends; inheriting the Windows
+      // PATH keeps node, claude, codex and every other Windows tool on hand.
+      MSYSTEM: 'UCRT64',
+      // Scratch space for the command router, per user and always writable.
+      BYNDERY_TMP: dirs.temp,
+      MSYS2_PATH_TYPE: 'inherit',
+      CHERE_INVOKING: '1'
+    }),
+    integrated: true,
+    msys: { root: normalize(msys), tmp: tmp() }
+  }
+}
+
+function bashSpec(dirs: ShellDirs, file: string, msysRoot?: string): ShellSpec {
+  const script = join(dirs.integration, 'bash-integration.sh')
+  return {
+    name: 'bash',
+    file,
+    // --init-file only applies to a non-login shell, so the script replays
+    // the login startup files itself when BYNDERY_SHELL_LOGIN is set.
+    args: ['--init-file', msysRoot ? script.replace(/\\/g, '/') : script, '-i'],
+    env: msysRoot
+      ? { BYNDERY_SHELL_LOGIN: '1', MSYSTEM: 'MINGW64', CHERE_INVOKING: '1' }
+      : { BYNDERY_SHELL_LOGIN: process.platform === 'darwin' ? '1' : '' },
+    integrated: true,
+    msys: msysRoot ? { root: normalize(msysRoot), tmp: tmp() } : undefined
+  }
+}
+
+function onPath(exe: string): string | null {
+  try {
+    const out = execFileSync(process.platform === 'win32' ? 'where.exe' : 'which', [exe], { encoding: 'utf8', windowsHide: true })
+    return out.split(/\r?\n/).find((l) => l.trim())?.trim() ?? null
+  } catch {
+    return null
+  }
+}
+
+let detected: Detected[] | null = null
+
+/** Shells on this computer, best first. Found once per run. */
+export function detectShells(dirs: ShellDirs): Detected[] {
+  if (detected) return detected
+  const out: Detected[] = []
   if (process.platform === 'win32') {
     const msys = findMsys2(dirs.vendor)
-    if (msys) {
-      return {
-        name: 'zsh',
-        file: join(msys, 'usr', 'bin', 'zsh.exe'),
-        args: ['-l', '-i'],
-        env: msysEnv({
-          ...zshEnv(dirs),
-          // UCRT64 is the environment MSYS2 recommends; inheriting the Windows
-          // PATH keeps node, claude, codex and every other Windows tool on hand.
-          MSYSTEM: 'UCRT64',
-          // Scratch space for the command router, per user and always writable.
-          BYNDERY_TMP: dirs.temp,
-          MSYS2_PATH_TYPE: 'inherit',
-          CHERE_INVOKING: '1'
-        }),
-        integrated: true,
-        msys: { root: normalize(msys), tmp: tmp() }
-      }
-    }
+    if (msys) out.push({ id: 'zsh', name: 'zsh', spec: msysZsh(dirs, msys), routes: true })
     const bash = findGitBash()
-    if (bash) {
-      const root = dirname(dirname(bash))
-      return {
-        name: 'bash',
-        file: bash,
-        // --init-file only applies to a non-login shell, so the script replays
-        // the login startup files itself when BYNDERY_SHELL_LOGIN is set.
-        args: ['--init-file', bashScript.replace(/\\/g, '/'), '-i'],
-        env: { BYNDERY_SHELL_LOGIN: '1', MSYSTEM: 'MINGW64', CHERE_INVOKING: '1' },
-        integrated: true,
-        msys: { root: normalize(root), tmp: tmp() }
-      }
+    if (bash) out.push({ id: 'git-bash', name: 'Git Bash', spec: bashSpec(dirs, bash, dirname(dirname(bash))), routes: false })
+    const pwsh = onPath('pwsh.exe')
+    if (pwsh) out.push({ id: 'pwsh', name: 'PowerShell', spec: { name: 'pwsh', file: pwsh, args: ['-NoLogo'], env: {}, integrated: false }, routes: false })
+    const root = process.env.SystemRoot ?? 'C:\\Windows'
+    out.push({
+      id: 'powershell',
+      name: 'Windows PowerShell',
+      spec: { name: 'powershell', file: join(root, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'), args: ['-NoLogo'], env: {}, integrated: false },
+      routes: false
+    })
+    out.push({ id: 'cmd', name: 'Command Prompt', spec: { name: 'cmd', file: join(root, 'System32', 'cmd.exe'), args: [], env: {}, integrated: false }, routes: false })
+  } else {
+    const login = process.env.SHELL || '/bin/zsh'
+    const shells = [login, '/bin/zsh', '/usr/bin/zsh', '/bin/bash', '/usr/bin/bash', '/opt/homebrew/bin/fish', '/usr/bin/fish'].filter((f, i, a) => a.indexOf(f) === i && existsSync(f))
+    for (const file of shells) {
+      const base = file.split('/').pop() ?? 'sh'
+      if (out.some((d) => d.id === base)) continue
+      const spec: ShellSpec =
+        base === 'zsh'
+          ? { name: 'zsh', file, args: process.platform === 'darwin' ? ['-l', '-i'] : ['-i'], env: zshEnv(dirs), integrated: true }
+          : base === 'bash'
+            ? bashSpec(dirs, file)
+            : { name: base, file, args: ['-l'], env: {}, integrated: false }
+      out.push({ id: base, name: base, spec, routes: false })
     }
-    return { name: 'powershell', file: 'powershell.exe', args: ['-NoLogo'], env: {}, integrated: false }
   }
+  detected = out
+  return out
+}
 
-  const user = process.env.SHELL || '/bin/zsh'
-  if (/zsh$/.test(user)) {
-    return { name: 'zsh', file: user, args: process.platform === 'darwin' ? ['-l', '-i'] : ['-i'], env: zshEnv(dirs), integrated: true }
+/** Detected shells and the user's own profiles, with every field resolved. */
+export function resolveProfiles(dirs: ShellDirs, s: Settings): Profile[] {
+  const list: Profile[] = []
+  const make = (id: string, base: Partial<Profile>, entry: ProfileEntry = {}): Profile => ({
+    ...s.profileDefaults,
+    name: id,
+    command: '',
+    program: '',
+    args: [],
+    startIn: '',
+    env: {},
+    hidden: false,
+    detected: false,
+    routes: false,
+    ...base,
+    ...Object.fromEntries(Object.entries(entry).filter(([, v]) => v !== undefined)),
+    id
+  })
+  const withProgram = (p: Profile, fallback: string): Profile => ({ ...p, program: p.command || fallback })
+  for (const d of detectShells(dirs)) list.push(withProgram(make(d.id, { name: d.name, detected: true, routes: d.routes }, s.profiles[d.id]), d.spec.file))
+  for (const [id, entry] of Object.entries(s.profiles)) {
+    if (!list.some((p) => p.id === id)) list.push(withProgram(make(id, { name: entry.name || id }, entry), ''))
   }
-  if (/bash$/.test(user)) {
-    return {
-      name: 'bash',
-      file: user,
-      args: ['--init-file', bashScript, '-i'],
-      env: { BYNDERY_SHELL_LOGIN: process.platform === 'darwin' ? '1' : '' },
-      integrated: true
-    }
+  return list
+}
+
+/** How to start a profile. A detected profile keeps byndery's integration unless its command was changed. */
+export function specFor(dirs: ShellDirs, p: Profile): ShellSpec {
+  const found = detectShells(dirs).find((d) => d.id === p.id)
+  let spec: ShellSpec
+  if (found && !p.command) spec = { ...found.spec, args: p.args.length ? p.args : found.spec.args }
+  else {
+    const file = p.command || found?.spec.file || (process.platform === 'win32' ? 'cmd.exe' : '/bin/sh')
+    const base = file.replace(/\\/g, '/').split('/').pop()!.replace(/\.exe$/i, '').toLowerCase()
+    if (base === 'zsh' && process.platform !== 'win32') spec = { name: 'zsh', file, args: ['-i'], env: zshEnv(dirs), integrated: true }
+    else if (base === 'bash' && process.platform !== 'win32') spec = bashSpec(dirs, file)
+    else spec = { name: base, file, args: [], env: {}, integrated: false }
+    if (p.args.length) spec.args = p.args
   }
-  return { name: user.split('/').pop() || 'shell', file: user, args: ['-l'], env: {}, integrated: false }
+  const env: Record<string, string> = { ...spec.env }
+  if (spec.name === 'zsh') {
+    if (p.promptStyle === 'own') env.BYNDERY_PROMPT = 'keep'
+    else env.BYNDERY_PROMPT_STYLE = p.promptStyle
+  }
+  for (const [k, v] of Object.entries(p.env)) env[k] = spec.msys && isWindowsPath(v) ? toMsys(v) : v
+  return { ...spec, env }
+}
+
+/** The byndery zsh: the one shell whose prompt routes lines to PowerShell and cmd. */
+function routingZsh(dirs: ShellDirs): ShellSpec | null {
+  return detectShells(dirs).find((d) => d.routes)?.spec ?? null
+}
+
+/**
+ * Which system the byndery prompt would run a line in, and why, by asking the
+ * router itself, so Settings never guesses differently from the shell.
+ */
+export function explainRoute(dirs: ShellDirs, line: string): Promise<{ system: string; reason: string } | null> {
+  const zsh = routingZsh(dirs)
+  if (!zsh) return Promise.resolve(null)
+  const script = toMsys(join(dirs.integration, 'zsh', 'windows.zsh'))
+  return new Promise((resolve) => {
+    execFile(
+      zsh.file,
+      ['-f', '-c', 'source "$1"; __byndery_explain "$2"', 'zsh', script, line],
+      { env: { ...process.env, ...zsh.env, BYNDERY_EXPLAIN: '1', MSYS2_ARG_CONV_EXCL: '*' }, timeout: 8000, windowsHide: true, encoding: 'utf8' },
+      (err, stdout) => {
+        const [system, ...why] = (stdout ?? '').trim().split('\t')
+        resolve(!system || (err && !stdout) ? null : { system, reason: why.join('\t') })
+      }
+    )
+  })
 }

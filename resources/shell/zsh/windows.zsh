@@ -1,27 +1,32 @@
 # One prompt for Linux (zsh), PowerShell and cmd on Windows.
 #
-# When Enter is pressed, the line goes to one system, chosen in this order:
+# When Enter is pressed, the whole line goes to one system. The choice works
+# like a shell's own command lookup, with the order set in Settings:
 #
-#  1. A prefix: `zsh: …`, `pwsh: …` or `cmd: …`. Prefixes work even for a
-#     system that is switched off in Settings.
-#  2. Syntax only PowerShell parses: an approved Verb-Noun first word
-#     (Get-Process), `$env:`, `$name =`, or `[Type]::`.
-#  3. zsh's own lookup (alias, function, builtin, program on PATH), except
-#     `dir` and `cd /d`, which go to cmd while cmd is on.
-#  4. cmd built-ins (copy, del, ren, md, rd, mklink, ver, ...).
-#  5. zsh, which reports "command not found".
+#  1. A prefix (`zsh:`, `pwsh:`, `cmd:` by default) picks the system
+#     outright, even one that is switched off.
+#  2. A name the user pinned in Settings (`dir` to cmd by default) goes to
+#     its system.
+#  3. Syntax only PowerShell parses goes to PowerShell: `$env:`, `$x = 1`,
+#     `[Type]::`, or an approved Verb-Noun cmdlet zsh does not know.
+#     `cd /d` goes to cmd.
+#  4. Otherwise the systems are asked in order, and the first that knows the
+#     first word runs the line: zsh by its own lookup (alias, function,
+#     builtin, program on PATH), cmd by its built-in commands, PowerShell by
+#     Verb-Noun.
+#  5. Nothing knows it: the first system in the order reports the error.
 #
-# A whole line goes to one system, so `Get-Process | Where-Object CPU -gt 9`
-# keeps PowerShell's meaning; later stages of a pipeline are programs found
-# on that system's PATH. `name.exe` always runs the Windows program. After a
+# `byndery-route <line>` prints the choice and the rule behind it, the way
+# `type -a` explains a name. Later stages of a pipeline are programs on that
+# system's PATH, and `name.exe` always runs the Windows program. After a
 # PowerShell or cmd line, its folder, exit code and environment changes come
 # back to zsh, so `cd /d D:\x` and `$env:X = 1` stick.
 #
 # Unquoted Windows paths (C:\Users\me) are read as paths in zsh lines.
 # The screen and history show the line as it was typed.
 #
-# Which systems take part is read on every Enter from $BYNDERY_ROUTING_FILE
-# (written by Settings), using $(<file), which reads without a subprocess.
+# The settings come from $BYNDERY_ROUTING_FILE, written by byndery and read
+# on every Enter with $(<file), which needs no subprocess.
 
 typeset -gA __byndery_cmd_builtins=(
   assoc 1 cls 1 color 1 copy 1 del 1 erase 1 ftype 1 md 1 mklink 1 move 1
@@ -45,6 +50,9 @@ typeset -gA __byndery_ps_verbs
 
 typeset -g __byndery_typed='' __byndery_ran='' __byndery_tag=''
 
+# Settings runs `zsh -f` to explain a line; that zsh has no login PATH.
+[[ -n $BYNDERY_EXPLAIN ]] && path=(/ucrt64/bin /usr/local/bin /usr/bin $path)
+
 () {
   # Full paths: the inherited PATH can lack System32, and a direct exec skips
   # Cygwin's .exe lookup.
@@ -60,7 +68,8 @@ typeset -g __byndery_typed='' __byndery_ran='' __byndery_tag=''
   # path forms. One cygpath call at startup; none per line. The folder sits in
   # the user's temp, passed in by byndery, because the app folder may be
   # read-only once installed.
-  typeset -g __byndery_tmp=${BYNDERY_TMP:-${TMPDIR:-/tmp}}/shell-$$
+  typeset -g __byndery_tmp=${BYNDERY_TMP:-${TMPDIR:-/tmp}}/shell-$
+  [[ -n $BYNDERY_EXPLAIN ]] && return
   mkdir -p $__byndery_tmp 2>/dev/null
   typeset -g __byndery_tmp_win=${$(cygpath -w $__byndery_tmp 2>/dev/null):-$__byndery_tmp}
   typeset -g __byndery_tmp_dos=${$(cygpath -d $__byndery_tmp 2>/dev/null):-$__byndery_tmp_win}
@@ -204,53 +213,129 @@ __byndery_fix_paths() {
   REPLY=$out
 }
 
-# Decides which system runs a line. Sets REPLY to zsh, pwsh or cmd, and
-# __byndery_line to the line without any prefix.
+# Routing settings, parsed again only when the file's text changes.
+typeset -g __byndery_cfg_text=$'\0'
+typeset -ga __byndery_order __byndery_on
+typeset -gA __byndery_prefix __byndery_override
+typeset -gi __byndery_pssyntax=1
+__byndery_read_config() {
+  setopt local_options extended_glob
+  local text=''
+  [[ -n $BYNDERY_ROUTING_FILE && -r $BYNDERY_ROUTING_FILE ]] && text=$(<$BYNDERY_ROUTING_FILE)
+  [[ $text == "$__byndery_cfg_text" ]] && return
+  __byndery_cfg_text=$text
+  __byndery_order=(linux powershell cmd) __byndery_on=(linux powershell cmd)
+  __byndery_prefix=(linux zsh: powershell pwsh: cmd cmd:) __byndery_override=(dir cmd)
+  __byndery_pssyntax=1
+  [[ -z $text ]] && return
+  __byndery_override=()
+  local line k v
+  for line in ${(f)text}; do
+    line=${line%$'\r'}
+    k=${line%%=*} v=${line#*=}
+    case $k in
+      (order) __byndery_order=(${=v}) ;;
+      (on) __byndery_on=(${=v}) ;;
+      (pssyntax) __byndery_pssyntax=${v:-0} ;;
+      (prefix.*) __byndery_prefix[${k#prefix.}]=$v ;;
+      (override.*) __byndery_override[${k#override.}]=$v ;;
+    esac
+  done
+}
+
+# Whether a system knows the first word of a line.
+__byndery_knows() {
+  setopt local_options extended_glob
+  local sys=$1 first=$2
+  case $sys in
+    (linux) whence -- $first >/dev/null 2>&1 ;;
+    (cmd) (( ${__byndery_cmd_builtins[${first:l}]:-0} )) ;;
+    (powershell) [[ $first == (#b)([A-Za-z]##)-[A-Za-z]## ]] && (( $+__byndery_ps_verbs[${match[1]:l}] )) ;;
+    (*) return 1 ;;
+  esac
+}
+
+typeset -gA __byndery_tag_of=(linux zsh powershell pwsh cmd cmd)
+
+# Decides which system runs a line. Sets REPLY to zsh, pwsh or cmd,
+# __byndery_line to the line without any prefix, and __byndery_why to the
+# rule that decided.
 __byndery_pick() {
   setopt local_options extended_glob
-  local line=$1 linux=1 pwsh=1 cmd=1
-  if [[ -n $BYNDERY_ROUTING_FILE && -r $BYNDERY_ROUTING_FILE ]]; then
-    local cfg=$(<$BYNDERY_ROUTING_FILE)
-    [[ $cfg == *linux=0* ]] && linux=0
-    [[ $cfg == *powershell=0* ]] && pwsh=0
-    [[ $cfg == *cmd=0* ]] && cmd=0
-  fi
+  __byndery_read_config
+  local line=$1 sys pre
   __byndery_line=$line
-  case $line in
-    (zsh:*) __byndery_line=${line#zsh:}; __byndery_line=${__byndery_line# }; REPLY=zsh; return ;;
-    (pwsh:*) __byndery_line=${line#pwsh:}; __byndery_line=${__byndery_line# }; REPLY=pwsh; return ;;
-    (cmd:*) __byndery_line=${line#cmd:}; __byndery_line=${__byndery_line# }; REPLY=cmd; return ;;
-  esac
+  for sys in linux powershell cmd; do
+    pre=${__byndery_prefix[$sys]}
+    [[ -n $pre && $line == "$pre"* ]] || continue
+    __byndery_line=${line#$pre}; __byndery_line=${__byndery_line# }
+    REPLY=${__byndery_tag_of[$sys]} __byndery_why="prefix $pre"
+    return
+  done
   local -a words
   words=(${(z)line})
   local first=${words[1]} low=${words[1]:l}
-  REPLY=zsh
+  REPLY=zsh __byndery_why='empty line'
   [[ -z $first ]] && return
-  # Leaving the shell always means zsh.
-  [[ $low == (exit|logout|clear) ]] && return
-
-  if (( pwsh )); then
-    if [[ $first == (#b)([A-Za-z]##)-[A-Za-z]## ]] && (( $+__byndery_ps_verbs[${match[1]:l}] )) && ! whence -- $first >/dev/null 2>&1; then
-      REPLY=pwsh; return
-    fi
-    if [[ $first == '$env:'* || $line == '$'[A-Za-z_][A-Za-z0-9_:]#' '#'='[^=]* || $first == '['[A-Za-z.]##']::'* ]]; then
-      REPLY=pwsh; return
-    fi
-  fi
-  if (( cmd )); then
-    [[ $low == dir ]] && { REPLY=cmd; return }
-    [[ $low == cd && ${words[2]:l} == /d ]] && { REPLY=cmd; return }
-  fi
-  if (( linux )) && whence -- $first >/dev/null 2>&1; then
+  # Leaving or clearing the shell always means zsh.
+  [[ $low == (exit|logout|clear) ]] && { __byndery_why='zsh itself'; return }
+  local on=" ${__byndery_on} "
+  sys=${__byndery_override[$low]}
+  if [[ -n $sys && $on == *" $sys "* ]]; then
+    REPLY=${__byndery_tag_of[$sys]} __byndery_why="pinned in Settings"
     return
   fi
-  if (( cmd )) && (( ${__byndery_cmd_builtins[$low]:-0} )); then
-    REPLY=cmd; return
+  if (( __byndery_pssyntax )) && [[ $on == *' powershell '* ]]; then
+    if [[ $first == '$env:'* || $line == '$'[A-Za-z_][A-Za-z0-9_:]#' '#'='[^=]* || $first == '['[A-Za-z.]##']::'* ]]; then
+      REPLY=pwsh __byndery_why='PowerShell syntax'; return
+    fi
+    if __byndery_knows powershell $first && ! whence -- $first >/dev/null 2>&1; then
+      REPLY=pwsh __byndery_why='PowerShell cmdlet'; return
+    fi
   fi
-  # With Linux off, plain lines go to PowerShell, or to cmd.
-  if (( ! linux )); then
-    if (( pwsh )); then REPLY=pwsh; elif (( cmd )); then REPLY=cmd; fi
+  if [[ $on == *' cmd '* && $low == cd && ${words[2]:l} == /d ]]; then
+    REPLY=cmd __byndery_why='cmd syntax (cd /d)'; return
   fi
+  for sys in $__byndery_order; do
+    [[ $on == *" $sys "* ]] || continue
+    if __byndery_knows $sys $first; then
+      REPLY=${__byndery_tag_of[$sys]}
+      case $sys in
+        (linux)
+          # whence -w prints "name: kind".
+          local kind
+          kind=$(whence -w -- $first 2>/dev/null)
+          kind=${kind##*:}
+          case ${kind## #} in
+            (alias) __byndery_why='zsh alias' ;;
+            (function) __byndery_why='zsh function' ;;
+            (builtin) __byndery_why='zsh builtin' ;;
+            (reserved) __byndery_why='zsh keyword' ;;
+            (*) __byndery_why="program ${$(whence -p -- $first 2>/dev/null):-$first}" ;;
+          esac ;;
+        (cmd) __byndery_why='cmd built-in' ;;
+        (powershell) __byndery_why='PowerShell cmdlet' ;;
+      esac
+      return
+    fi
+  done
+  # Nothing knows it: the first system on reports "not found".
+  sys=${${=__byndery_on}[1]:-linux}
+  REPLY=${__byndery_tag_of[$sys]} __byndery_why='not found anywhere'
+}
+
+# For Settings and for byndery-route: system and rule, tab-separated.
+__byndery_explain() {
+  local __byndery_why
+  __byndery_pick "$1"
+  print -r -- "$REPLY"$'\t'"$__byndery_why"
+}
+
+byndery-route() {
+  local __byndery_why
+  __byndery_pick "$*"
+  local -A names=(zsh Linux pwsh PowerShell cmd 'Command Prompt')
+  print -r -- "${names[$REPLY]} ($__byndery_why)"
 }
 
 __byndery_route_line() {

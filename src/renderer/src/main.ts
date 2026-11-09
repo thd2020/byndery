@@ -10,6 +10,7 @@ import { SettingsSheet } from './settings'
 import { HistoryPanel } from './history-panel'
 import { Keymap, focusScope, type Action } from './keymap'
 import { PathBar } from './pathbar'
+import type { SettingsState } from '../../shared/settings'
 import '@fontsource-variable/source-serif-4/opsz.css'
 import '@fontsource-variable/source-serif-4/opsz-italic.css'
 import './editor.css'
@@ -37,9 +38,11 @@ const terms = new TerminalManager($('#term-host'), $('#term-tabs .tabs'))
 const tree = new FileTree($('#tree'))
 const editor = new EditorArea($('#editor'), $('#editor-tabs .tabs'), $('#editor-host'), $('#editor-notice'), $('#editor-empty'), $('#md-toggle'))
 const pathBar = new PathBar($('#tree-path'))
+const keymap = new Keymap()
 let root = ''
 /** Tree and terminal folder sync, both ways, as in Dolphin's terminal panel. Off until switched on. */
-let follow = prefs.sync === true
+let follow = false
+let settings: SettingsState | null = null
 let files: string[] | null = null
 
 // Title bar colours follow the theme so the system caption buttons blend in.
@@ -283,11 +286,12 @@ function toggleSidebar(): void {
 }
 
 function toggleFollow(): void {
-  follow = !follow
-  prefs.sync = follow
-  delete prefs.follow
+  void api.settings.set(['files', 'sync'], !follow)
+}
+
+/** Sync was switched on or off, from the button or from Settings. */
+function syncChanged(): void {
   applyLayout()
-  savePrefs()
   // Switching sync on brings the tree to the terminal's folder.
   const t = terms.active
   if (!t) return
@@ -309,22 +313,41 @@ async function openFolder(): Promise<void> {
   terms.create(dir)
 }
 
-function setFontSize(size: number): void {
-  terms.fontSize = size
-  document.documentElement.style.setProperty('--code-size', `${size}px`)
-  for (const v of terms.views) v.xterm.options.fontSize = size
-  terms.refit()
+// Ctrl+= and Ctrl+- zoom the terminals and the editor together, for this
+// window; the sizes themselves are settings.
+let zoomBy = typeof prefs.zoom === 'number' ? prefs.zoom : 0
+function applyZoom(): void {
+  terms.zoom = zoomBy
+  const size = (settings?.effective.editor.fontSize ?? 13) + zoomBy
+  document.documentElement.style.setProperty('--code-size', `${Math.max(6, size)}px`)
+  for (const v of terms.views) v.applySettings()
   editor.view.requestMeasure()
 }
 function zoom(delta: number): void {
-  const size = delta === 0 ? 13 : Math.max(9, Math.min(24, terms.fontSize + delta))
-  prefs.fontSize = size
+  zoomBy = delta === 0 ? 0 : Math.max(-6, Math.min(12, zoomBy + delta))
+  prefs.zoom = zoomBy
+  delete prefs.fontSize
   savePrefs()
-  setFontSize(size)
+  applyZoom()
 }
-if (typeof prefs.fontSize === 'number') setFontSize(prefs.fontSize)
 
-const settingsSheet = new SettingsSheet()
+const settingsSheet = new SettingsSheet(keymap)
+settingsSheet.openFile.on((file) => void editor.open(file, { pin: true }).then(() => editor.focus()))
+
+/** Settings arrived or changed: every part of the window takes its share. */
+function applySettings(s: SettingsState): void {
+  const was = settings
+  settings = s
+  terms.applySettings(s)
+  keymap.setOverrides(s.effective.keys)
+  editor.configure(s.effective.editor)
+  applyZoom()
+  if (was && was.effective.files.sync === s.effective.files.sync) return
+  follow = s.effective.files.sync
+  if (was) syncChanged()
+  else applyLayout()
+}
+api.settings.onChange(applySettings)
 const historyPanel = new HistoryPanel()
 
 /** Ctrl+K: the command memory, for the active terminal. */
@@ -350,14 +373,13 @@ function openHistory(): void {
 async function closeTerminal(): Promise<void> {
   const t = terms.active
   if (!t) return
-  if (t.status === 'busy') {
+  if (t.status === 'busy' && settings?.effective.general.confirmClose !== false) {
     const choice = await api.confirm('Close this terminal?', 'A command is still running in it.', ['Close', 'Cancel'])
     if (choice !== 0) return t.focus()
   }
   terms.close(t)
 }
 
-const keymap = new Keymap()
 const actions: Action[] = [
   { id: 'palette.files', label: 'Go to File', keys: ['Mod+P'], scope: 'window', run: () => palette.show('') },
   { id: 'palette.commands', label: 'Show All Commands', keys: ['Mod+Shift+P', 'F1'], scope: 'window', run: () => palette.show('>'), hidden: true },
@@ -454,6 +476,20 @@ terms.claimsKey = (e) => keymap.match(e, 'terminal') != null
 $('#ws-button').addEventListener('click', () => void openFolder())
 $('#search-button').addEventListener('click', () => palette.show(''))
 $('#new-term').addEventListener('click', () => terms.create())
+// The profiles menu beside +, as in Windows Terminal.
+$('#new-term-menu').addEventListener('click', async () => {
+  const s = settings
+  if (!s) return
+  const profiles = s.profiles.filter((p) => !p.hidden)
+  const def = terms.defaultProfile()?.id
+  const id = await api.menu([
+    ...profiles.map((p) => ({ id: `p:${p.id}`, label: p.id === def ? `${p.name} (default)` : p.name })),
+    { separator: true },
+    { id: 'settings', label: 'Settings', accel: 'CmdOrCtrl+,' }
+  ])
+  if (id === 'settings') void settingsSheet.open()
+  else if (id?.startsWith('p:')) terms.create(undefined, id.slice(2))
+})
 $('#follow-button').addEventListener('click', toggleFollow)
 $('#tree-up').addEventListener('click', () => void goUp())
 // Mouse back and forward buttons over the tree.
@@ -474,6 +510,7 @@ window.addEventListener('beforeunload', () => {
 })
 
 void (async () => {
+  applySettings(await api.settings.get())
   await setWorkspace(await api.workspace.initial())
   terms.create(root)
 })()
