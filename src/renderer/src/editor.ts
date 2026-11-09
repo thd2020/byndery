@@ -37,7 +37,11 @@ interface Tab {
   /** Set when the file could not be opened as text. */
   unreadable?: 'binary' | 'too-large' | 'missing'
   conflict?: string
+  /** A new file that has no path yet; `path` holds "untitled:N" until Save As. */
+  untitled?: string
 }
+
+const isMarkdown = (p: string): boolean => /.(md|markdown|mdx)$/i.test(p)
 
 const languageSlot = new Compartment()
 const modeSlot = new Compartment()
@@ -183,53 +187,65 @@ export class EditorArea {
   }
 
   private async openNew(path: string, opts: { line?: number; col?: number; pin?: boolean }): Promise<void> {
-    let tab: Tab | undefined
-    {
-      const r = await api.fs.read(path)
-      const isMd = /\.(md|markdown|mdx)$/i.test(path)
-      tab = {
-        path,
-        state: EditorState.create({ doc: '' }),
-        saved: EditorState.create({ doc: '' }).doc,
-        mtime: r.mtime,
-        preview: !opts.pin,
-        markdown: isMd,
-        raw: false,
-        scroll: 0,
-        el: h('div', 'tab'),
-        unreadable: r.text == null ? r.reason : undefined
-      }
-      tab.state = EditorState.create({ doc: r.text ?? '', extensions: this.extensions(tab) })
-      tab.saved = tab.state.doc
-      const t0 = tab
-      t0.el.addEventListener('click', () => this.activate(t0))
-      t0.el.addEventListener('dblclick', () => this.pin(t0))
-      t0.el.addEventListener('mousedown', (e) => {
-        if (e.button === 1) {
-          e.preventDefault()
-          void this.close(t0)
-        }
-      })
-      t0.el.addEventListener('contextmenu', (e) => {
-        e.preventDefault()
-        void this.tabMenu(t0)
-      })
-      // A new preview replaces the old one unless that one has been edited.
-      const old = this.tabs.find((x) => x.preview && x.state.doc.eq(x.saved))
-      if (tab.preview && old) {
-        const i = this.tabs.indexOf(old)
-        this.tabs.splice(i, 1, tab)
-        old.el.replaceWith(tab.el)
-        if (this.active === old) this.active = null
-      } else {
-        this.tabs.push(tab)
-        this.tabBar.append(tab.el)
-      }
-      void this.loadLanguage(tab)
-    }
+    const r = await api.fs.read(path)
+    const tab = this.makeTab(path, r.text ?? '', { preview: !opts.pin, mtime: r.mtime })
+    tab.unreadable = r.text == null ? r.reason : undefined
     this.renderTab(tab)
     this.activate(tab)
     if (opts.line) this.goto(opts.line, opts.col)
+  }
+
+  private untitledCount = 0
+
+  /** A new, empty tab with no file behind it until it is saved. */
+  newFile(): void {
+    const n = ++this.untitledCount
+    const tab = this.makeTab(`untitled:${n}`, '', { preview: false, mtime: 0 })
+    tab.untitled = `Untitled-${n}`
+    this.renderTab(tab)
+    this.activate(tab)
+    this.focus()
+  }
+
+  private makeTab(path: string, text: string, o: { preview: boolean; mtime: number }): Tab {
+    const tab: Tab = {
+      path,
+      state: EditorState.create({ doc: '' }),
+      saved: EditorState.create({ doc: '' }).doc,
+      mtime: o.mtime,
+      preview: o.preview,
+      markdown: isMarkdown(path),
+      raw: false,
+      scroll: 0,
+      el: h('div', 'tab')
+    }
+    tab.state = EditorState.create({ doc: text, extensions: this.extensions(tab) })
+    tab.saved = tab.state.doc
+    tab.el.addEventListener('click', () => this.activate(tab))
+    tab.el.addEventListener('dblclick', () => this.pin(tab))
+    tab.el.addEventListener('mousedown', (e) => {
+      if (e.button === 1) {
+        e.preventDefault()
+        void this.close(tab)
+      }
+    })
+    tab.el.addEventListener('contextmenu', (e) => {
+      e.preventDefault()
+      void this.tabMenu(tab)
+    })
+    // A new preview replaces the old one unless that one has been edited.
+    const old = this.tabs.find((x) => x.preview && x.state.doc.eq(x.saved))
+    if (tab.preview && old) {
+      const i = this.tabs.indexOf(old)
+      this.tabs.splice(i, 1, tab)
+      old.el.replaceWith(tab.el)
+      if (this.active === old) this.active = null
+    } else {
+      this.tabs.push(tab)
+      this.tabBar.append(tab.el)
+    }
+    void this.loadLanguage(tab)
+    return tab
   }
 
   private async loadLanguage(tab: Tab): Promise<void> {
@@ -289,25 +305,37 @@ export class EditorArea {
     return !doc.eq(tab.saved)
   }
 
-  async save(): Promise<void> {
+  /** Saves the active tab; false when there was nothing to save or Save As was cancelled. */
+  async save(): Promise<boolean> {
     const tab = this.active
-    if (!tab || tab.unreadable) return
+    if (!tab || tab.unreadable) return false
     const doc = this.view.state.doc
+    if (tab.untitled) {
+      const to = await api.workspace.saveAs(`${this.root}/${tab.untitled}.txt`)
+      if (!to) return false
+      tab.path = to
+      tab.untitled = undefined
+      tab.markdown = isMarkdown(to)
+      this.view.dispatch({ effects: modeSlot.reconfigure(this.modeExtensions(tab)) })
+      void this.loadLanguage(tab)
+      this.activeChanged.emit(to)
+    }
     tab.mtime = await api.fs.write(tab.path, doc.toString())
     tab.saved = doc
     tab.conflict = undefined
     this.pin(tab)
     this.renderTab(tab)
     this.renderChrome()
+    return true
   }
 
   async close(tab: Tab | null = this.active): Promise<void> {
     if (!tab) return
     if (this.dirty(tab)) {
       if (this.active !== tab) this.activate(tab)
-      const choice = await api.confirm(`Save changes to ${basename(tab.path)}?`, 'Your changes will be lost if you don’t save them.', ['Save', 'Don’t Save', 'Cancel'])
+      const choice = await api.confirm(`Save changes to ${this.title(tab)}?`, 'Your changes will be lost if you don’t save them.', ['Save', 'Don’t Save', 'Cancel'])
       if (choice === 2) return
-      if (choice === 0) await this.save()
+      if (choice === 0 && !(await this.save())) return
     }
     const i = this.tabs.indexOf(tab)
     this.tabs.splice(i, 1)
@@ -344,7 +372,7 @@ export class EditorArea {
   /** `@path#L3-9` for the active selection, relative to `cwd` when it can be. Claude Code reads this form. */
   reference(cwd: string): string | null {
     const tab = this.active
-    if (!tab) return null
+    if (!tab || tab.untitled) return null
     const rel = relativeFrom(cwd, tab.path) ?? tab.path
     const sel = this.view.state.selection.main
     let ref = `@${rel.includes(' ') ? `"${rel}"` : rel}`
@@ -418,14 +446,18 @@ export class EditorArea {
     this.renderTab(tab)
   }
 
+  private title(tab: Tab): string {
+    return tab.untitled ?? basename(tab.path)
+  }
+
   private renderTab(tab: Tab): void {
-    const dup = this.tabs.some((x) => x !== tab && basename(x.path) === basename(tab.path))
+    const dup = !tab.untitled && this.tabs.some((x) => x !== tab && basename(x.path) === basename(tab.path))
     tab.el.className = 'tab'
     tab.el.classList.toggle('active', tab === this.active)
     tab.el.classList.toggle('preview', tab.preview)
     tab.el.classList.toggle('dirty', this.dirty(tab))
-    tab.el.title = relative(this.root, tab.path) ?? tab.path
-    const label = h('span', 'label', basename(tab.path))
+    tab.el.title = tab.untitled ?? relative(this.root, tab.path) ?? tab.path
+    const label = h('span', 'label', this.title(tab))
     if (tab.unreadable === 'missing') label.style.textDecoration = 'line-through'
     const parts: HTMLElement[] = [label]
     if (dup) {
@@ -450,7 +482,7 @@ export class EditorArea {
     }
     // Notice bar: a file changed on disk while it had unsaved edits.
     if (tab?.conflict != null) {
-      const msg = h('span', '', `${basename(tab.path)} changed on disk.`)
+      const msg = h('span', '', `${this.title(tab)} changed on disk.`)
       const reload = h('button', '', 'Reload')
       const keep = h('button', '', 'Keep Mine')
       reload.addEventListener('click', () => {
@@ -485,11 +517,11 @@ export class EditorArea {
 
   private async tabMenu(tab: Tab): Promise<void> {
     const id = await api.menu([
-      { id: 'close', label: 'Close' },
+      { id: 'close', label: 'Close', accel: 'CmdOrCtrl+W' },
       { id: 'others', label: 'Close Others', enabled: this.tabs.length > 1 },
-      { separator: true },
-      { id: 'copy', label: 'Copy Path' },
-      { id: 'reveal', label: 'Reveal in File Tree' }
+      ...(tab.untitled
+        ? []
+        : [{ separator: true }, { id: 'copy', label: 'Copy Path' }, { id: 'reveal', label: 'Reveal in File Tree' }])
     ])
     if (id === 'close') void this.close(tab)
     else if (id === 'others') {

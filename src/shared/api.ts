@@ -58,6 +58,8 @@ export interface Bridge {
   workspace: {
     initial(): Promise<string>
     pick(): Promise<string | null>
+    /** Native Save As dialog; the chosen path, normalized, or null. */
+    saveAs(defaultPath: string): Promise<string | null>
   }
   term: {
     create(cwd: string, cols: number, rows: number): Promise<TermInfo>

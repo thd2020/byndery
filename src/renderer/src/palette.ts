@@ -1,6 +1,6 @@
 import { rank } from '../../shared/fuzzy'
 import { h } from './bridge'
-import { keyLabel } from './keys'
+import { keyLabel } from './keymap'
 
 export interface Command {
   id: string

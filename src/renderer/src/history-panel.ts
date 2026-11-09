@@ -18,10 +18,10 @@ export interface HistoryTarget {
 }
 
 /**
- * The command memory, searched from one panel. Ctrl+R opens it from the
- * terminal, the way Atuin and Warp take over that key. Typing searches
- * commands and their output; Ctrl+R again moves between everything, this
- * workspace, this folder and this terminal. As in Atuin's shipped config,
+ * The command memory, searched from one panel. Ctrl+K opens it; Ctrl+R
+ * stays with the shell's own reverse search. Typing searches commands and
+ * their output; Ctrl+K again moves between everything, this workspace, this
+ * folder and this terminal. As in Atuin's shipped config,
  * Enter runs the command and Tab puts it on the prompt to edit.
  */
 export class HistoryPanel {
@@ -43,6 +43,8 @@ export class HistoryPanel {
     this.el.hidden = true
     this.el.setAttribute('role', 'dialog')
     this.el.setAttribute('aria-label', 'Command history')
+    // Keys typed here are the panel's own; the window's shortcuts stay out.
+    this.el.dataset.ownKeys = ''
     this.input.placeholder = 'Search commands and output'
     this.input.spellcheck = false
     const head = h('div', 'history-head')
@@ -179,7 +181,7 @@ export class HistoryPanel {
     } else if (e.key === 'ArrowUp' || (mod && e.key === 'p')) {
       e.preventDefault()
       this.select(this.index - 1)
-    } else if (mod && e.key.toLowerCase() === 'r') {
+    } else if (mod && e.code === 'KeyK') {
       e.preventDefault()
       const i = SCOPES.findIndex((s) => s.id === this.scope)
       this.scope = SCOPES[(i + 1) % SCOPES.length].id

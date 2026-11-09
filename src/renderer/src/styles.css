@@ -708,6 +708,13 @@ body.editor-max #editor {
   overflow: visible;
 }
 
+/* The command Ctrl+Up and Ctrl+Down selected, with its output. */
+.cmd-focus {
+  pointer-events: none;
+  background: var(--accent-weak);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
 /* Editor. */
 
 #editor-host {

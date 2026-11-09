@@ -328,21 +328,21 @@ await step('Command history finds output, puts commands back and runs them', asy
   await win.waitForTimeout(300)
   // Search by text that only appears in an earlier command's output.
   await win.evaluate(() => window.__byndery.terms.active.focus())
-  await win.keyboard.press('Control+R')
+  await win.keyboard.press('Control+K')
   await waitFor(() => win.locator('.history:not([hidden])').count(), 'history panel')
   await win.keyboard.type('3:10 here')
   await waitFor(async () => (await win.locator('.history-list li.active .history-cmd').textContent())?.includes("echo 'error at app.ts:3:10 here'"), 'echo found by its output')
   await waitFor(async () => (await win.locator('.history-output').textContent()).includes('error at app.ts:3:10 here'), 'output preview')
   await shot('08-history')
-  // Ctrl+R cycles the scope; Tab puts the command on the prompt without running it.
-  await win.keyboard.press('Control+R')
+  // Ctrl+K again cycles the scope; Tab puts the command on the prompt without running it.
+  await win.keyboard.press('Control+K')
   assert.equal(await win.locator('.history-scope[aria-pressed="true"]').textContent(), 'This workspace')
   await win.keyboard.press('Tab')
   await waitFor(async () => (await termText()).trimEnd().endsWith("echo 'error at app.ts:3:10 here'"), 'command on the prompt')
   await win.keyboard.press('Control+U')
   // Enter runs it.
   const before = await promptCount()
-  await win.keyboard.press('Control+R')
+  await win.keyboard.press('Control+K')
   await win.keyboard.type('ZSH_VERSION')
   await waitFor(async () => (await win.locator('.history-list li.active .history-cmd').textContent())?.includes('ZSH_VERSION'), 'ZSH_VERSION found')
   await win.keyboard.press('Enter')
@@ -390,7 +390,7 @@ await step('Paths work in both forms: C:\\ and /c/', async () => {
   assert.equal(line, 2)
 })
 
-await step('Ctrl+Up scrolls back to the previous prompt', async () => {
+await step('Ctrl+Up selects the previous command and scrolls to it', async () => {
   await typeInTerminal('seq 1 200')
   await waitFor(async () => (await termText()).includes('\n200'), 'seq output')
   await win.waitForTimeout(300)
@@ -398,15 +398,39 @@ await step('Ctrl+Up scrolls back to the previous prompt', async () => {
   await win.keyboard.press('Control+ArrowUp')
   const after = await win.evaluate(() => window.__byndery.terms.active.xterm.buffer.active.viewportY)
   assert.ok(after < before, `viewport moved up (${before} to ${after})`)
+  await waitFor(() => win.locator('.cmd-focus').count(), 'selected command outlined')
   await win.keyboard.press('Control+ArrowDown')
+  await waitFor(async () => (await win.locator('.cmd-focus').count()) === 0, 'back at the prompt')
 })
 
-await step('Second terminal opens in the active terminal folder', async () => {
-  await win.keyboard.press('Control+Shift+Backquote')
+await step('Ctrl+T opens a terminal in the active folder; Ctrl+W closes it', async () => {
+  await win.evaluate(() => window.__byndery.terms.active.focus())
+  await win.keyboard.press('Control+T')
   await waitFor(async () => (await win.locator('#term-tabs .tab').count()) === 2, 'two terminal tabs')
   await waitFor(async () => (await promptCount()) > 0, 'prompt in second terminal', 15000)
   const cwd = await win.evaluate(() => window.__byndery.terms.active.cwd)
   assert.ok(cwd.toLowerCase().endsWith('/src'), `second terminal cwd ${cwd}`)
+  await win.keyboard.press('Control+W')
+  await waitFor(async () => (await win.locator('#term-tabs .tab').count()) === 1, 'back to one terminal')
+})
+
+await step('In the editor, Ctrl+T opens an untitled tab and Ctrl+W closes it', async () => {
+  await win.evaluate(() => window.__byndery.editor.focus())
+  const tabs = await win.locator('#editor-tabs .tab').count()
+  await win.keyboard.press('Control+T')
+  await waitFor(() => win.locator('#editor-tabs .tab.active', { hasText: 'Untitled-1' }).count(), 'untitled tab')
+  assert.equal(await win.locator('#term-tabs .tab').count(), 1)
+  await win.keyboard.press('Control+W')
+  await waitFor(async () => (await win.locator('#editor-tabs .tab').count()) === tabs, 'untitled tab closed')
+})
+
+await step('F1 lists commands with their keys', async () => {
+  await win.keyboard.press('F1')
+  await waitFor(() => win.locator('#palette:not([hidden])').count(), 'palette open')
+  assert.equal(await win.locator('#palette-input').inputValue(), '>')
+  await win.keyboard.type('history')
+  await waitFor(async () => (await win.locator('#palette-list li.active').textContent())?.includes('Ctrl+K'), 'history command shows Ctrl+K')
+  await win.keyboard.press('Escape')
 })
 
 await step('Dark theme follows the system', async () => {

@@ -38,19 +38,20 @@ The second command builds the shell environment in `vendor/`: MSYS2 with zsh and
 | Keys | Does |
 |---|---|
 | Ctrl+P | Go to a file; `>` for commands, `:` for a line, or paste an absolute path |
-| Ctrl+Shift+P | Commands |
+| F1 or Ctrl+Shift+P | Commands |
+| Ctrl+T | New terminal in the current folder; in the editor, a new file |
+| Ctrl+W | Close the terminal or the editor tab that has focus |
+| Ctrl+K | Search every earlier command and its output; Enter runs it, Tab puts it on the prompt |
+| Ctrl+Up, Ctrl+Down in the terminal | Select the previous or next command with its output |
 | Ctrl+click on a path in the terminal | Open it in the editor at that line |
 | Ctrl+L in the editor | Send the file and selected lines to the terminal as `@path#L3-9` |
 | Ctrl+E in the editor | Switch Markdown between rendered and source |
-| Ctrl+R in the terminal | Search every earlier command and its output; Enter runs it, Tab puts it on the prompt |
-| Ctrl+Up, Ctrl+Down in the terminal | Previous or next prompt |
 | Ctrl+` | Move between the terminal and the editor |
-| Ctrl+Shift+` | New terminal |
 | Ctrl+B | Show or hide the file tree |
-| Ctrl+S, Ctrl+W | Save, close tab |
+| Ctrl+S | Save |
 | Ctrl+, | Settings |
 
-Ctrl+C copies when terminal text is selected and interrupts otherwise; Ctrl+V pastes.
+Ctrl+C copies when terminal text is selected and interrupts otherwise; the selection stays until you type or press Escape. Ctrl+V pastes. Ctrl+R is the shell's own reverse search.
 
 On Windows the prompt also takes PowerShell and cmd commands: `Get-Process | Where-Object CPU -gt 100` runs in PowerShell, `copy`, `del` and `mklink` run in cmd, and `C:\Users\me` works as a path. Start a line with `pwsh:`, `cmd:` or `zsh:` to choose the system yourself. Settings (Ctrl+,) switches each system on or off; the rules are in [`docs/design.md`](docs/design.md).
 

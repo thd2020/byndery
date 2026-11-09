@@ -13,7 +13,6 @@ const RUN_ID = Math.random().toString(36).slice(2, 8)
 import { basename, fromMsys, join, normalize, isWindowsPath, relativeFrom, shellQuote, toMsys } from '../../shared/paths'
 import { api, Emitter, h, icon, ICON, isMac } from './bridge'
 import { terminalTheme, onThemeChange } from './theme'
-import { isAppShortcut } from './keys'
 
 export interface OpenRequest {
   path: string
@@ -140,7 +139,10 @@ export class TermView {
     this.ready = api.term.create(startCwd, this.xterm.cols, this.xterm.rows).then((info) => {
       this.info = info
       mgr.byId.set(info.id, this)
-      this.xterm.onData((d) => api.term.write(info.id, d))
+      this.xterm.onData((d) => {
+        if (this.jumpLine != null) this.clearJump()
+        api.term.write(info.id, d)
+      })
       this.xterm.onBinary((d) => api.term.write(info.id, d))
       this.renderTab()
     })
@@ -339,13 +341,45 @@ export class TermView {
     return `${RUN_ID}-${this.info?.id ?? 0}`
   }
 
-  /** Scrolls to the previous (-1) or next (+1) prompt. */
+  /** The command Ctrl+Up and Ctrl+Down have selected, by its prompt's buffer line. */
+  private jumpLine: number | null = null
+  private jumpDeco: IDecoration | null = null
+
+  /**
+   * Selects the previous (-1) or next (+1) command, scrolls it into view and
+   * outlines it with its output, the way VS Code and iTerm2 mark commands.
+   * Moving past the newest command returns to the prompt.
+   */
   jumpToPrompt(dir: -1 | 1): void {
-    const top = this.xterm.buffer.active.viewportY
+    const x = this.xterm
     const lines = this.marks.filter((m) => !m.marker.isDisposed).map((m) => m.marker.line)
-    const target = dir < 0 ? lines.reverse().find((l) => l < top) : lines.find((l) => l > top)
-    if (target != null) this.xterm.scrollToLine(target)
-    else if (dir > 0) this.xterm.scrollToBottom()
+    if (!lines.length) return
+    // The last mark is the prompt being typed at; it is where navigation starts and ends.
+    const live = lines.length - 1
+    let i = this.jumpLine == null ? live : lines.indexOf(this.jumpLine)
+    if (i < 0) i = live
+    i = Math.max(0, i + dir)
+    this.clearJump()
+    if (i >= live) {
+      x.scrollToBottom()
+      return
+    }
+    const line = lines[i]
+    const height = Math.max(1, Math.min(lines[i + 1] - line, x.rows))
+    const b = x.buffer.active
+    if (line < b.viewportY || line + height > b.viewportY + x.rows) x.scrollToLine(Math.max(0, line - 1))
+    this.jumpLine = line
+    const marker = x.registerMarker(line - (b.baseY + b.cursorY))
+    if (!marker) return
+    this.jumpDeco = x.registerDecoration({ marker, width: x.cols, height, layer: 'top' }) ?? null
+    this.jumpDeco?.onRender((el) => el.classList.add('cmd-focus'))
+    this.jumpDeco?.onDispose(() => marker.dispose())
+  }
+
+  private clearJump(): void {
+    this.jumpDeco?.dispose()
+    this.jumpDeco = null
+    this.jumpLine = null
   }
 
   private registerFileLinks(): void {
@@ -449,12 +483,9 @@ export class TermView {
         void api.clipboard.read().then((t) => t && x.paste(t))
         return false
       }
-      if (e.ctrlKey && !e.shiftKey && !e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
-        this.jumpToPrompt(e.key === 'ArrowUp' ? -1 : 1)
-        return false
-      }
-      // Leave the app's own shortcuts to the window handler.
-      if (isAppShortcut(e)) return false
+      // The app's own keys are taken by the window before xterm sees them;
+      // this keeps xterm from acting on any that slip through.
+      if (this.mgr.claimsKey(e)) return false
       return true
     })
   }
@@ -492,8 +523,8 @@ export class TermView {
       { id: 'all', label: 'Select All' },
       { id: 'clear', label: 'Clear' },
       { separator: true },
-      { id: 'new', label: 'New Terminal', accel: 'CmdOrCtrl+Shift+`' },
-      { id: 'kill', label: 'Close Terminal' }
+      { id: 'new', label: 'New Terminal', accel: 'CmdOrCtrl+T' },
+      { id: 'kill', label: 'Close Terminal', accel: 'CmdOrCtrl+W' }
     ])
     if (id === 'copy') api.clipboard.write(x.getSelection())
     else if (id === 'paste') void api.clipboard.read().then((t) => t && x.paste(t))
@@ -515,6 +546,8 @@ export class TerminalManager {
   readonly activeChanged = new Emitter<TermView | null>()
   root = ''
   fontSize = 13
+  /** Set by the app: true for keys that belong to an app action rather than the shell. */
+  claimsKey: (e: KeyboardEvent) => boolean = () => false
 
   constructor(
     private host: HTMLElement,

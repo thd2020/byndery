@@ -15,7 +15,8 @@ const bridge: Bridge = {
   },
   workspace: {
     initial: () => ipcRenderer.invoke('ws:initial'),
-    pick: () => ipcRenderer.invoke('ws:pick')
+    pick: () => ipcRenderer.invoke('ws:pick'),
+    saveAs: (defaultPath) => ipcRenderer.invoke('dialog:saveAs', defaultPath)
   },
   term: {
     create: (cwd, cols, rows) => ipcRenderer.invoke('term:create', cwd, cols, rows),

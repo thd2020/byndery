@@ -8,6 +8,7 @@ import { EditorArea } from './editor'
 import { Palette, type Command } from './palette'
 import { SettingsSheet } from './settings'
 import { HistoryPanel } from './history-panel'
+import { Keymap, focusScope, type Action } from './keymap'
 import '@fontsource-variable/source-serif-4/opsz.css'
 import '@fontsource-variable/source-serif-4/opsz-italic.css'
 import './editor.css'
@@ -236,7 +237,7 @@ if (typeof prefs.fontSize === 'number') setFontSize(prefs.fontSize)
 const settingsSheet = new SettingsSheet()
 const historyPanel = new HistoryPanel()
 
-/** Ctrl+R: the command memory, for the active terminal. */
+/** Ctrl+K: the command memory, for the active terminal. */
 function openHistory(): void {
   const t = terms.active ?? terms.create()
   void historyPanel.open({
@@ -255,31 +256,60 @@ function openHistory(): void {
   })
 }
 
-const commands = (): Command[] => [
-  { id: 'settings', label: 'Settings', key: 'Mod+,', run: () => void settingsSheet.open() },
-  { id: 'history', label: 'Command History', key: 'Mod+R', run: openHistory },
-  { id: 'open-folder', label: 'Open Folder…', key: 'Mod+O', run: () => void openFolder() },
-  { id: 'new-term', label: 'New Terminal', key: 'Mod+Shift+`', run: () => terms.create() },
-  { id: 'close-term', label: 'Close Terminal', run: () => terms.active && terms.close(terms.active) },
-  { id: 'focus-term', label: 'Focus Terminal', key: 'Mod+`', run: () => (terms.active ?? terms.create()).focus() },
-  { id: 'focus-tree', label: 'Focus File Tree', key: 'Mod+Shift+E', run: () => tree.focus() },
-  { id: 'toggle-tree', label: 'Toggle File Tree', key: 'Mod+B', run: toggleSidebar },
-  { id: 'follow', label: follow ? 'Stop Following Terminal Folder' : 'Follow Terminal Folder', run: toggleFollow },
-  { id: 'collapse', label: 'Collapse Folders', run: () => tree.collapseAll() },
-  { id: 'save', label: 'Save', key: 'Mod+S', run: () => void editor.save() },
-  { id: 'close-tab', label: 'Close Editor Tab', key: 'Mod+W', run: () => void editor.close() },
-  { id: 'hide-editor', label: 'Hide Editor', run: () => editor.hide() },
-  { id: 'md-source', label: 'Toggle Markdown Source', key: 'Mod+E', run: () => editor.toggleSource() },
-  { id: 'send', label: 'Send Selection to Terminal', key: 'Mod+L', run: sendSelection },
-  { id: 'reveal', label: 'Reveal Active File in Tree', run: () => editor.active && void tree.reveal(editor.active.path) },
-  { id: 'reveal-os', label: isMac ? 'Reveal Active File in Finder' : 'Reveal Active File in File Explorer', run: () => editor.active && api.fs.reveal(editor.active.path) },
-  { id: 'copy-path', label: 'Copy Active File Path', run: () => editor.active && api.clipboard.write(editor.active.path) },
-  { id: 'zoom-in', label: 'Increase Font Size', key: 'Mod+=', run: () => zoom(1) },
-  { id: 'zoom-out', label: 'Decrease Font Size', key: 'Mod+-', run: () => zoom(-1) },
-  { id: 'zoom-reset', label: 'Reset Font Size', key: 'Mod+0', run: () => zoom(0) },
-  { id: 'reload', label: 'Reload Window', run: () => location.reload() },
-  { id: 'devtools', label: 'Toggle Developer Tools', run: () => api.devtools() }
+/** Ctrl+W in a terminal. A command still running is confirmed first, as VS Code and Windows Terminal do. */
+async function closeTerminal(): Promise<void> {
+  const t = terms.active
+  if (!t) return
+  if (t.status === 'busy') {
+    const choice = await api.confirm('Close this terminal?', 'A command is still running in it.', ['Close', 'Cancel'])
+    if (choice !== 0) return t.focus()
+  }
+  terms.close(t)
+}
+
+const keymap = new Keymap()
+const actions: Action[] = [
+  { id: 'palette.files', label: 'Go to File', keys: ['Mod+P'], scope: 'window', run: () => palette.show('') },
+  { id: 'palette.commands', label: 'Show All Commands', keys: ['Mod+Shift+P', 'F1'], scope: 'window', run: () => palette.show('>'), hidden: true },
+  { id: 'settings', label: 'Settings', keys: ['Mod+,'], scope: 'window', run: () => settingsSheet.toggle() },
+  { id: 'history', label: 'Search Command History', keys: ['Mod+K'], scope: 'window', run: openHistory },
+  { id: 'folder.open', label: 'Open Folder…', keys: ['Mod+O'], scope: 'window', run: () => void openFolder() },
+  { id: 'term.new', label: 'New Terminal', keys: ['Mod+T', 'Mod+Shift+`'], scope: 'window', run: () => terms.create() },
+  { id: 'term.close', label: 'Close Terminal', keys: ['Mod+W'], scope: 'terminal', run: () => void closeTerminal() },
+  { id: 'term.prevCommand', label: 'Previous Command', keys: ['Mod+Up'], scope: 'terminal', run: () => terms.active?.jumpToPrompt(-1) },
+  { id: 'term.nextCommand', label: 'Next Command', keys: ['Mod+Down'], scope: 'terminal', run: () => terms.active?.jumpToPrompt(1) },
+  { id: 'term.next', label: 'Next Terminal', keys: ['Mod+Tab', 'Mod+PageDown'], scope: 'terminal', run: () => terms.cycle(1) },
+  { id: 'term.prev', label: 'Previous Terminal', keys: ['Mod+Shift+Tab', 'Mod+PageUp'], scope: 'terminal', run: () => terms.cycle(-1) },
+  { id: 'focus.toggle', label: 'Move Between Terminal and Editor', keys: ['Mod+`'], scope: 'window', run: toggleFocus },
+  { id: 'tree.focus', label: 'Focus File Tree', keys: ['Mod+Shift+E'], scope: 'window', run: () => tree.focus() },
+  { id: 'tree.toggle', label: 'Show or Hide File Tree', keys: ['Mod+B'], scope: 'window', run: toggleSidebar },
+  { id: 'tree.follow', label: 'Sync File Tree and Terminal Folder', keys: [], scope: 'window', run: toggleFollow },
+  { id: 'tree.collapse', label: 'Collapse Folders', keys: [], scope: 'window', run: () => tree.collapseAll() },
+  { id: 'editor.new', label: 'New File', keys: ['Mod+T', 'Mod+N'], scope: 'editor', run: () => editor.newFile() },
+  { id: 'editor.save', label: 'Save', keys: ['Mod+S'], scope: 'window', run: () => void editor.save() },
+  { id: 'editor.close', label: 'Close Editor Tab', keys: ['Mod+W'], scope: 'window', run: () => void editor.close() },
+  { id: 'editor.next', label: 'Next Editor Tab', keys: ['Mod+Tab', 'Mod+PageDown'], scope: 'window', run: () => editor.cycle(1) },
+  { id: 'editor.prev', label: 'Previous Editor Tab', keys: ['Mod+Shift+Tab', 'Mod+PageUp'], scope: 'window', run: () => editor.cycle(-1) },
+  { id: 'editor.hide', label: 'Hide Editor', keys: [], scope: 'window', run: () => editor.hide() },
+  { id: 'editor.source', label: 'Switch Markdown Preview and Source', keys: ['Mod+E'], scope: 'editor', run: () => editor.toggleSource() },
+  { id: 'editor.send', label: 'Send Selection to Terminal', keys: ['Mod+L'], scope: 'editor', run: sendSelection },
+  { id: 'editor.gotoLine', label: 'Go to Line', keys: ['Mod+G'], scope: 'editor', run: () => palette.show(':') },
+  { id: 'editor.reveal', label: 'Reveal Active File in Tree', keys: [], scope: 'window', run: () => editor.active && void tree.reveal(editor.active.path) },
+  { id: 'editor.revealOs', label: isMac ? 'Reveal Active File in Finder' : 'Reveal Active File in File Explorer', keys: [], scope: 'window', run: () => editor.active && api.fs.reveal(editor.active.path) },
+  { id: 'editor.copyPath', label: 'Copy Active File Path', keys: [], scope: 'window', run: () => editor.active && api.clipboard.write(editor.active.path) },
+  { id: 'zoom.in', label: 'Increase Font Size', keys: ['Mod+='], scope: 'window', run: () => zoom(1) },
+  { id: 'zoom.out', label: 'Decrease Font Size', keys: ['Mod+-'], scope: 'window', run: () => zoom(-1) },
+  { id: 'zoom.reset', label: 'Reset Font Size', keys: ['Mod+0'], scope: 'window', run: () => zoom(0) },
+  { id: 'window.reload', label: 'Reload Window', keys: [], scope: 'window', run: () => location.reload() },
+  { id: 'window.devtools', label: 'Toggle Developer Tools', keys: [], scope: 'window', run: () => api.devtools() }
 ]
+keymap.define(actions)
+
+const commands = (): Command[] =>
+  keymap
+    .all()
+    .filter((a) => !a.hidden)
+    .map((a) => ({ id: a.id, label: a.label, key: keymap.keysOf(a.id)[0], run: a.run }))
 
 const palette = new Palette($('#palette'), $<HTMLInputElement>('#palette-input'), $<HTMLUListElement>('#palette-list'), {
   files: async () => (files ??= await api.fs.find(root)),
@@ -313,45 +343,22 @@ const palette = new Palette($('#palette'), $<HTMLInputElement>('#palette-input')
     })
 })
 
-// Keyboard. Editor-only shortcuts apply when focus is in the editor, so Ctrl+W
-// and Ctrl+E keep their readline meaning in the terminal.
+// Keyboard. The window listens first, in the capture phase, so an app key
+// never reaches the shell; keys bound to nothing go on to the focused pane.
+// A panel with its own keys (the command history) keeps them.
 window.addEventListener(
   'keydown',
   (e) => {
-    const mod = isMac ? e.metaKey : e.ctrlKey
-    if (!mod || e.altKey) return
-    const k = e.key.toLowerCase()
-    const inEditor = !!document.activeElement?.closest('#editor')
-    const inTerm = !!document.activeElement?.closest('#terminals')
-    let handled = true
-    if (k === ',') settingsSheet.toggle()
-    else if (k === 'r' && !e.shiftKey && !historyPanel.isOpen && !document.activeElement?.closest('#editor')) openHistory()
-    else if (k === 'p' && e.shiftKey) palette.show('>')
-    else if (k === 'p') palette.show('')
-    else if (k === 'o') void openFolder()
-    else if (k === 'b') toggleSidebar()
-    else if (e.code === 'Backquote' && e.shiftKey) terms.create()
-    else if (e.code === 'Backquote') toggleFocus()
-    else if (k === 'e' && e.shiftKey) tree.focus()
-    else if (k === '=' || k === '+') zoom(1)
-    else if (k === '-') zoom(-1)
-    else if (k === '0') zoom(0)
-    else if ((k === 'tab' || k === 'pagedown' || k === 'pageup') && inTerm)
-      terms.cycle(k === 'pageup' || (k === 'tab' && e.shiftKey) ? -1 : 1)
-    else if (k === 'tab' || k === 'pagedown' || k === 'pageup') editor.cycle(k === 'pageup' || (k === 'tab' && e.shiftKey) ? -1 : 1)
-    else if (k === 's' && editor.active) void editor.save()
-    else if (k === 'w' && inEditor) void editor.close()
-    else if (k === 'e' && inEditor) editor.toggleSource()
-    else if (k === 'l' && inEditor) sendSelection()
-    else if (k === 'g' && inEditor) palette.show(':')
-    else handled = false
-    if (handled) {
-      e.preventDefault()
-      e.stopPropagation()
-    }
+    if ((document.activeElement as HTMLElement | null)?.closest('[data-own-keys]')) return
+    const action = keymap.match(e, focusScope())
+    if (!action) return
+    e.preventDefault()
+    e.stopPropagation()
+    action.run()
   },
   true
 )
+terms.claimsKey = (e) => keymap.match(e, 'terminal') != null
 
 $('#ws-button').addEventListener('click', () => void openFolder())
 $('#search-button').addEventListener('click', () => palette.show(''))
@@ -375,4 +382,4 @@ void (async () => {
 })()
 
 // Handles for the end-to-end tests and for poking at the app from DevTools.
-;(window as unknown as { __byndery: unknown }).__byndery = { terms, tree, editor, palette, settings: settingsSheet, history: historyPanel }
+;(window as unknown as { __byndery: unknown }).__byndery = { terms, tree, editor, palette, settings: settingsSheet, history: historyPanel, keymap }

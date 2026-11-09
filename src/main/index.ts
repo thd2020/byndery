@@ -149,6 +149,11 @@ function registerIpc(): void {
     e.returnValue = { windowsBuild: term.windowsBuild(), home: normalize(homedir()) }
   })
 
+  ipcMain.handle('dialog:saveAs', async (e, defaultPath: string) => {
+    const native = process.platform === 'win32' ? defaultPath.replace(/\//g, '\\') : defaultPath
+    const r = await dialog.showSaveDialog(sender(e)!, { defaultPath: native })
+    return r.canceled || !r.filePath ? null : normalize(r.filePath)
+  })
   ipcMain.handle('ws:initial', () => initialWorkspace())
   ipcMain.handle('ws:pick', async (e) => {
     const w = sender(e)
