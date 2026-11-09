@@ -75,7 +75,12 @@ const termText = () =>
   win.evaluate(() => {
     const b = window.__byndery.terms.active.xterm.buffer.active
     const out = []
-    for (let i = 0; i < b.length; i++) out.push(b.getLine(i).translateToString(true))
+    // Soft-wrapped rows belong to the line above them.
+    for (let i = 0; i < b.length; i++) {
+      const l = b.getLine(i)
+      if (l.isWrapped && out.length) out[out.length - 1] += l.translateToString(true)
+      else out.push(l.translateToString(true))
+    }
     return out.join('\n')
   })
 const waitFor = async (fn, what, ms = 8000) => {
@@ -94,10 +99,10 @@ const typeInTerminal = async (text) => {
 const promptCount = () => win.evaluate(() => window.__byndery.terms.active.marks.length)
 const norm = (p) => p.replace(/\\/g, '/').replace(/^[a-z]:/, (d) => d.toUpperCase())
 
-await step('Git Bash starts in the workspace with shell integration', async () => {
+await step('The default shell starts in the workspace with shell integration', async () => {
   await waitFor(async () => (await promptCount()) > 0, 'first prompt mark', 15000)
   const info = await win.evaluate(() => ({ shell: window.__byndery.terms.active.info.shell, cwd: window.__byndery.terms.active.cwd }))
-  assert.equal(info.shell, process.platform === 'win32' ? 'bash' : info.shell)
+  assert.ok(['zsh', 'bash'].includes(info.shell), `shell is ${info.shell}`)
   assert.equal(info.cwd.toLowerCase(), norm(ws).toLowerCase())
 })
 await shot('01-start')
@@ -237,6 +242,50 @@ await step('Dragging a file from the tree onto the terminal types its path', asy
     await win.evaluate(() => window.__byndery.terms.active.focus())
     await win.keyboard.press('Control+U')
   }
+})
+
+await step('One prompt runs zsh, PowerShell cmdlets, cmd built-ins and Windows programs', async () => {
+  const shell = await win.evaluate(() => window.__byndery.terms.active.info.shell)
+  if (process.platform !== 'win32' || shell !== 'zsh') return
+  const run = async (cmd, expect) => {
+    const before = await promptCount()
+    await typeInTerminal(cmd)
+    await waitFor(async () => (await promptCount()) > before, `prompt after ${cmd}`, 20000)
+    const text = await termText()
+    assert.ok(expect.test(text.slice(text.lastIndexOf(cmd))), `${cmd} printed ${JSON.stringify(text.slice(text.lastIndexOf(cmd)).slice(0, 200))}`)
+  }
+  await run("Get-Date -Format 'yyyy-MM' | Write-Output", /20\d\d-\d\d/)
+  await run('ver', /Microsoft Windows/)
+  await run('whoami.exe', /whoami\.exe\n(?!zsh:)\S+/)
+  await run('echo $ZSH_VERSION', /\d+\.\d+/)
+})
+
+await step('Paths work in both forms: C:\\ and /c/', async () => {
+  const shell = await win.evaluate(() => window.__byndery.terms.active.info.shell)
+  if (process.platform !== 'win32' || shell !== 'zsh') return
+  const winPath = join(ws, 'notes')
+  const msysPath = '/' + ws[0].toLowerCase() + ws.slice(2).replace(/\\/g, '/') + '/src'
+  let before = await promptCount()
+  await typeInTerminal(`cd ${winPath}`)
+  await waitFor(async () => (await promptCount()) > before, 'prompt after cd C:\\')
+  await waitFor(async () => (await win.evaluate(() => window.__byndery.terms.active.cwd)).endsWith('/notes'), 'cwd is notes')
+  const shown = await termText()
+  assert.ok(shown.includes(`cd ${winPath}`), 'the line is shown as typed')
+  before = await promptCount()
+  await typeInTerminal(`cd ${msysPath}`)
+  await waitFor(async () => (await promptCount()) > before, 'prompt after cd /c/')
+  await waitFor(async () => (await win.evaluate(() => window.__byndery.terms.active.cwd)).endsWith('/src'), 'cwd is src')
+
+  await win.keyboard.press('Control+P')
+  await win.keyboard.type(`${msysPath}/app.ts:2`)
+  await waitFor(async () => (await win.locator('#palette-list li.active .key').textContent()) === 'Open', 'Open item')
+  await win.keyboard.press('Enter')
+  await waitFor(() => win.locator('#editor-tabs .tab.active', { hasText: 'app.ts' }).count(), 'app.ts open')
+  const line = await win.evaluate(() => {
+    const v = window.__byndery.editor.view
+    return v.state.doc.lineAt(v.state.selection.main.head).number
+  })
+  assert.equal(line, 2)
 })
 
 await step('Ctrl+Up scrolls back to the previous prompt', async () => {

@@ -29,6 +29,9 @@ export class Palette {
       commands: () => Command[]
       openFile: (rel: string) => void
       gotoLine: (n: number) => void
+      /** An absolute path typed or pasted in either form, C:\x or /c/x, or null. */
+      absolute: (input: string) => { path: string; line?: number } | null
+      openPath: (path: string, line?: number) => void
     }
   ) {
     input.addEventListener('input', () => void this.refresh())
@@ -84,6 +87,13 @@ export class Palette {
         return { label: c.label, key: c.key ? keyLabel(c.key) : undefined, hits: r.hits, run: c.run }
       })
     } else {
+      const abs = this.source.absolute(v.trim())
+      if (abs) {
+        this.items = [{ label: abs.path + (abs.line ? `:${abs.line}` : ''), key: 'Open', run: () => this.source.openPath(abs.path, abs.line) }]
+        this.index = 0
+        this.render()
+        return
+      }
       const files = await this.source.files()
       if (this.input.value !== v) return
       const ranked = rank(v.trim(), files, 60)

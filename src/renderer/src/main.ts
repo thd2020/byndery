@@ -1,11 +1,13 @@
 import './canvas-font-shim'
-import { basename, join, normalize, relative } from '../../shared/paths'
+import { basename, fromMsys, isWindowsPath, join, normalize, relative } from '../../shared/paths'
 import { api, isMac } from './bridge'
 import { cssVar, onThemeChange } from './theme'
 import { TerminalManager } from './terminal'
 import { FileTree } from './tree'
 import { EditorArea } from './editor'
 import { Palette, type Command } from './palette'
+import '@fontsource-variable/source-serif-4/opsz.css'
+import '@fontsource-variable/source-serif-4/opsz-italic.css'
 import './editor.css'
 
 const $ = <T extends HTMLElement = HTMLElement>(sel: string): T => document.querySelector(sel) as T
@@ -257,7 +259,32 @@ const palette = new Palette($('#palette'), $<HTMLInputElement>('#palette-input')
   files: async () => (files ??= await api.fs.find(root)),
   commands,
   openFile: (rel) => void editor.open(join(root, rel), { pin: true }).then(() => editor.focus()),
-  gotoLine: (n) => editor.goto(n)
+  gotoLine: (n) => editor.goto(n),
+  absolute: (input) => {
+    let s = input.replace(/^["']|["']$/g, '')
+    let line: number | undefined
+    const pos = /:(\d+)(?::\d+)?$/.exec(s)
+    if (pos) {
+      line = Number(pos[1])
+      s = s.slice(0, pos.index)
+    }
+    if (isWindowsPath(s)) return { path: normalize(s), line }
+    if (/^\/[A-Za-z](\/|$)/.test(s) || (s.startsWith('/') && terms.active?.info?.msys)) {
+      return { path: fromMsys(s, terms.active?.info?.msys), line }
+    }
+    if (s.startsWith('~/')) return { path: join(api.sys.home, s.slice(2)), line }
+    return null
+  },
+  openPath: (path, line) =>
+    void api.fs.stat(path).then(async (st) => {
+      if (!st) return
+      if (!st.dir) return editor.open(path, { pin: true, line }).then(() => editor.focus())
+      if (relative(root, path) != null) await tree.reveal(path).then(() => tree.toggle(path, true))
+      else {
+        await setWorkspace(path)
+        terms.create(path)
+      }
+    })
 })
 
 // Keyboard. Editor-only shortcuts apply when focus is in the editor, so Ctrl+W
