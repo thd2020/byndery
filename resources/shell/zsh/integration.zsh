@@ -27,8 +27,20 @@ __byndery_prompt_start() {
   print -n "\e]133;A\a"
 }
 
+# OSC 633;E carries the command line itself, escaped the way VS Code does:
+# backslash doubled, semicolon and control characters as \xNN. byndery keeps
+# it in its command memory. A line the router sent to PowerShell or cmd is
+# reported as it was typed ($__byndery_display, set by windows.zsh).
 __byndery_preexec() {
+  setopt local_options extended_glob
   __byndery_running=1
+  local line=${__byndery_display:-$1}
+  __byndery_display=''
+  line=${line//\\/\\\\}
+  line=${line//;/\\x3b}
+  # Every control character as \xNN, computed in place without a subprocess.
+  line=${line//(#m)[[:cntrl:]]/\\x${(l:2::0:)$(( [##16] #MATCH ))}}
+  print -rn -- $'\e]633;E;'"$line"$'\a'
   print -n "\e]133;C\a"
 }
 

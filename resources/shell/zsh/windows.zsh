@@ -284,6 +284,8 @@ __byndery_redraw_typed() {
   [[ -n $__byndery_typed && $1 == "$__byndery_ran" ]] || return 0
   local typed=$__byndery_typed ran=$__byndery_ran tag=$__byndery_tag
   __byndery_typed='' __byndery_ran=''
+  # The command memory records the line as typed, not the routed form.
+  typeset -g __byndery_display=$typed
   # Only Powerlevel10k's prompt is known to end in a two-column "❯ ".
   (( $+functions[p10k] )) || return 0
   # A typed prefix already says which system runs the line.
