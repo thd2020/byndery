@@ -86,6 +86,23 @@ export class SettingsSheet {
       box('cmd', 'cmd')
       this.body.append(group)
     }
+    const memory = h('fieldset', 'sheet-group')
+    memory.append(h('legend', '', 'Command history'))
+    const row = h('label', 'sheet-check')
+    const input = h('input')
+    input.type = 'checkbox'
+    input.checked = s.memory
+    input.dataset.key = 'memory'
+    input.addEventListener('change', () => void api.settings.set({ memory: input.checked }))
+    row.append(input, h('span', '', 'Remember commands and output'))
+    const clear = h('button', 'text-btn sheet-action', 'Clear History…')
+    clear.dataset.key = 'clear-history'
+    clear.addEventListener('click', async () => {
+      const choice = await api.confirm('Clear the command history?', 'Every remembered command and its output is deleted from this computer.', ['Clear', 'Cancel'])
+      if (choice === 0) await api.history.clear()
+    })
+    memory.append(row, clear)
+    this.body.append(memory)
     if (focused) (this.body.querySelector(`[data-key="${focused}"]`) as HTMLElement | null)?.focus()
   }
 }

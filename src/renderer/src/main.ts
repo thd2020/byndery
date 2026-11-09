@@ -7,6 +7,7 @@ import { FileTree } from './tree'
 import { EditorArea } from './editor'
 import { Palette, type Command } from './palette'
 import { SettingsSheet } from './settings'
+import { HistoryPanel } from './history-panel'
 import '@fontsource-variable/source-serif-4/opsz.css'
 import '@fontsource-variable/source-serif-4/opsz-italic.css'
 import './editor.css'
@@ -233,9 +234,30 @@ function zoom(delta: number): void {
 if (typeof prefs.fontSize === 'number') setFontSize(prefs.fontSize)
 
 const settingsSheet = new SettingsSheet()
+const historyPanel = new HistoryPanel()
+
+/** Ctrl+R: the command memory, for the active terminal. */
+function openHistory(): void {
+  const t = terms.active ?? terms.create()
+  void historyPanel.open({
+    cwd: t.cwd,
+    root,
+    session: t.session,
+    put: (text, run) => {
+      // Ctrl+U clears whatever is on the line in zsh and bash, then the
+      // command goes in as a paste so a multi-line one stays one command.
+      api.term.write(t.info.id, '\x15')
+      void t.send(text).then(() => {
+        if (run) api.term.write(t.info.id, '\r')
+        t.focus()
+      })
+    }
+  })
+}
 
 const commands = (): Command[] => [
   { id: 'settings', label: 'Settings', key: 'Mod+,', run: () => void settingsSheet.open() },
+  { id: 'history', label: 'Command History', key: 'Mod+R', run: openHistory },
   { id: 'open-folder', label: 'Open Folder…', key: 'Mod+O', run: () => void openFolder() },
   { id: 'new-term', label: 'New Terminal', key: 'Mod+Shift+`', run: () => terms.create() },
   { id: 'close-term', label: 'Close Terminal', run: () => terms.active && terms.close(terms.active) },
@@ -303,6 +325,7 @@ window.addEventListener(
     const inTerm = !!document.activeElement?.closest('#terminals')
     let handled = true
     if (k === ',') settingsSheet.toggle()
+    else if (k === 'r' && !e.shiftKey && !historyPanel.isOpen && !document.activeElement?.closest('#editor')) openHistory()
     else if (k === 'p' && e.shiftKey) palette.show('>')
     else if (k === 'p') palette.show('')
     else if (k === 'o') void openFolder()
@@ -352,4 +375,4 @@ void (async () => {
 })()
 
 // Handles for the end-to-end tests and for poking at the app from DevTools.
-;(window as unknown as { __byndery: unknown }).__byndery = { terms, tree, editor, palette, settings: settingsSheet }
+;(window as unknown as { __byndery: unknown }).__byndery = { terms, tree, editor, palette, settings: settingsSheet, history: historyPanel }

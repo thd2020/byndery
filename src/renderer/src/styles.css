@@ -916,3 +916,174 @@ body.editor-max #editor {
 .sheet-check:has(input:disabled) {
   color: var(--text-2);
 }
+
+/* Command history: a wide palette with the output of the selected command. */
+
+.history {
+  position: fixed;
+  top: calc(var(--titlebar) - 4px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(1040px, calc(100vw - 32px));
+  height: min(560px, calc(100vh - var(--titlebar) - 24px));
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-raised);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  z-index: 50;
+  overflow: hidden;
+  animation: palette-in 120ms var(--ease);
+}
+
+.history-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-right: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.history-input {
+  flex: 1;
+  min-width: 0;
+  height: 40px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: 14px var(--font-ui);
+  padding: 0 14px;
+  outline: none;
+  user-select: text;
+}
+
+.history-scopes {
+  display: flex;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+
+.history-scope {
+  height: 24px;
+  padding: 0 9px;
+  border-radius: var(--radius);
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.history-scope:hover {
+  background: var(--bg-hover);
+  color: var(--text-2);
+}
+
+.history-scope[aria-pressed='true'] {
+  background: var(--bg-active);
+  color: var(--text);
+}
+
+.history-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(280px, 42%) 1fr;
+}
+
+.history-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+  border-right: 1px solid var(--line);
+}
+
+.history-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 10px 0 8px;
+  border-radius: var(--radius);
+  white-space: nowrap;
+}
+
+.history-list li.active {
+  background: var(--accent-weak);
+}
+
+.history-list .empty {
+  color: var(--text-3);
+}
+
+.history-mark {
+  width: 3px;
+  height: 14px;
+  border-radius: 2px;
+  flex: 0 0 auto;
+  background: var(--line-strong);
+}
+
+.history-mark.ok {
+  background: var(--accent);
+}
+
+.history-mark.fail {
+  background: var(--danger);
+}
+
+.history-cmd {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font: var(--code-size) var(--font-mono);
+}
+
+.history-when {
+  color: var(--text-3);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.history-right {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.history-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  padding: 10px 14px 8px;
+  color: var(--text-3);
+  font-size: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.history-output {
+  flex: 1;
+  margin: 0;
+  padding: 10px 14px 16px;
+  overflow: auto;
+  font: var(--code-size) / 1.45 var(--font-mono);
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+}
+
+.history-output.none {
+  color: var(--text-3);
+  font-family: var(--font-ui);
+}
+
+.sheet-action {
+  justify-self: start;
+  margin-top: 4px;
+  margin-left: -8px;
+}
+
+.sheet-group + .sheet-group {
+  margin-top: 14px;
+}

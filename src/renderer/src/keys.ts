@@ -7,7 +7,9 @@ export function isAppShortcut(e: KeyboardEvent): boolean {
   const mod = isMac ? e.metaKey : e.ctrlKey
   if (!mod || e.altKey) return false
   const k = e.key.toLowerCase()
-  if (k === 'p' || k === 'b' || k === 'o') return true
+  // Ctrl+R opens byndery's command memory instead of the shell's own search,
+  // as Atuin and Warp do.
+  if (k === 'p' || k === 'b' || k === 'o' || (k === 'r' && !e.shiftKey)) return true
   if (e.code === 'Backquote') return true
   if (k === 'tab' || k === 'pageup' || k === 'pagedown') return true
   if (e.shiftKey && k === 'e') return true

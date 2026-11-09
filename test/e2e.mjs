@@ -63,7 +63,13 @@ const step = async (name, fn) => {
 }
 let failed = false
 
-const app = await _electron.launch({ args: ['.', ws, `--user-data-dir=${userData}`], cwd: appDir })
+// The shell keeps its history in the scratch profile, never in the user's home.
+const msysPath = (p) => (process.platform === 'win32' ? '/' + p[0].toLowerCase() + p.slice(2).split(String.fromCharCode(92)).join('/') : p)
+const app = await _electron.launch({
+  args: ['.', ws, `--user-data-dir=${userData}`],
+  cwd: appDir,
+  env: { ...process.env, HISTFILE: msysPath(join(userData, 'shell_history')) }
+})
 const win = await app.firstWindow()
 const errors = []
 win.on('pageerror', (e) => errors.push(e.message))
@@ -309,6 +315,51 @@ await step('Settings switch a system off; its prefix still works', async () => {
   await win.locator('.sheet-check input[data-key="powershell"]').check()
   await win.keyboard.press('Escape')
   assert.match(await run('ver'), /Microsoft Windows/)
+})
+
+await step('Command history finds output, puts commands back and runs them', async () => {
+  const run = async (cmd) => {
+    const before = await promptCount()
+    await typeInTerminal(cmd)
+    await waitFor(async () => (await promptCount()) > before, `prompt after ${cmd}`, 20000)
+  }
+  writeFileSync(join(ws, 'src', '.env'), 'API_TOKEN=do-not-store-me\n')
+  await run('cat .env')
+  await win.waitForTimeout(300)
+  // Search by text that only appears in an earlier command's output.
+  await win.evaluate(() => window.__byndery.terms.active.focus())
+  await win.keyboard.press('Control+R')
+  await waitFor(() => win.locator('.history:not([hidden])').count(), 'history panel')
+  await win.keyboard.type('3:10 here')
+  await waitFor(async () => (await win.locator('.history-list li.active .history-cmd').textContent())?.includes("echo 'error at app.ts:3:10 here'"), 'echo found by its output')
+  await waitFor(async () => (await win.locator('.history-output').textContent()).includes('error at app.ts:3:10 here'), 'output preview')
+  await shot('08-history')
+  // Ctrl+R cycles the scope; Tab puts the command on the prompt without running it.
+  await win.keyboard.press('Control+R')
+  assert.equal(await win.locator('.history-scope[aria-pressed="true"]').textContent(), 'This workspace')
+  await win.keyboard.press('Tab')
+  await waitFor(async () => (await termText()).trimEnd().endsWith("echo 'error at app.ts:3:10 here'"), 'command on the prompt')
+  await win.keyboard.press('Control+U')
+  // Enter runs it.
+  const before = await promptCount()
+  await win.keyboard.press('Control+R')
+  await win.keyboard.type('ZSH_VERSION')
+  await waitFor(async () => (await win.locator('.history-list li.active .history-cmd').textContent())?.includes('ZSH_VERSION'), 'ZSH_VERSION found')
+  await win.keyboard.press('Enter')
+  await waitFor(async () => (await promptCount()) > before, 'command ran from history')
+  // The secret file's contents were never kept.
+  const leaked = await win.evaluate(async () => {
+    const rows = await window.byndery.history.search({ text: 'do-not-store', scope: 'all' })
+    const env = (await window.byndery.history.search({ text: 'cat .env', scope: 'all' }))[0]
+    return { rows: rows.length, envOutput: env ? (await window.byndery.history.output(env.id)).text : null }
+  })
+  assert.deepEqual(leaked, { rows: 0, envOutput: '' })
+  // With the memory switched off, nothing new is kept.
+  await win.evaluate(() => window.byndery.settings.set({ memory: false }))
+  await run('echo not-remembered-xyz')
+  await win.evaluate(() => window.byndery.settings.set({ memory: true }))
+  await win.waitForTimeout(200)
+  assert.equal((await win.evaluate(() => window.byndery.history.search({ text: 'not-remembered-xyz', scope: 'all' }))).length, 0)
 })
 
 await step('Paths work in both forms: C:\\ and /c/', async () => {
