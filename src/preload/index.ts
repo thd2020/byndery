@@ -49,6 +49,11 @@ const bridge: Bridge = {
     write: (t) => ipcRenderer.send('clip:write', t),
     read: () => ipcRenderer.invoke('clip:read')
   },
+  settings: {
+    get: () => ipcRenderer.invoke('settings:get'),
+    set: (patch) => ipcRenderer.invoke('settings:set', patch),
+    onChange: (cb) => void ipcRenderer.on('settings:changed', (_e, s) => cb(s))
+  },
   menu: (items) => ipcRenderer.invoke('menu:popup', items),
   confirm: (m, d, b) => ipcRenderer.invoke('dialog:confirm', m, d, b),
   devtools: () => ipcRenderer.send('win:devtools')

@@ -2,11 +2,12 @@ import { app, BrowserWindow, ipcMain, dialog, shell, clipboard, Menu, nativeThem
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { homedir } from 'node:os'
-import { readFileSync, writeFileSync, existsSync, statSync } from 'node:fs'
+import { readFileSync, writeFileSync, existsSync, statSync, rmSync, mkdirSync } from 'node:fs'
 import { defaultShell, type ShellDirs } from './shell'
 import * as term from './pty'
 import * as files from './files'
 import * as git from './git'
+import * as settings from './settings'
 import { normalize } from '../shared/paths'
 
 // Window state and the last workspace live in Electron's userData folder,
@@ -34,12 +35,27 @@ function saveState(patch: Partial<Saved>): void {
   }
 }
 
+// A temp folder for the shells, cleared at each start so files left by
+// closed terminals do not pile up.
+let shellTempDir: string | null = null
+function shellTemp(): string {
+  if (shellTempDir) return shellTempDir
+  shellTempDir = join(app.getPath('temp'), 'byndery-shell')
+  try {
+    rmSync(shellTempDir, { recursive: true, force: true })
+    mkdirSync(shellTempDir, { recursive: true })
+  } catch {
+    // Another byndery window may hold a file open; reuse the folder as it is.
+  }
+  return shellTempDir
+}
+
 // In a packaged build the shell scripts and the bundled MSYS2 sit in the app's
 // resources folder; in development they come from the repository.
 const shellDirs = (): ShellDirs =>
   app.isPackaged
-    ? { integration: join(process.resourcesPath, 'shell'), vendor: join(process.resourcesPath, 'vendor') }
-    : { integration: join(app.getAppPath(), 'resources', 'shell'), vendor: join(app.getAppPath(), 'vendor') }
+    ? { integration: join(process.resourcesPath, 'shell'), vendor: join(process.resourcesPath, 'vendor'), routing: settings.routingFile(), temp: shellTemp() }
+    : { integration: join(app.getAppPath(), 'resources', 'shell'), vendor: join(app.getAppPath(), 'vendor'), routing: settings.routingFile(), temp: shellTemp() }
 
 function initialWorkspace(): string {
   const arg = process.argv.slice(app.isPackaged ? 1 : 2).find((a) => !a.startsWith('-') && a !== '.')
@@ -163,6 +179,9 @@ function registerIpc(): void {
   ipcMain.on('fs:reveal', (_e, p: string) => shell.showItemInFolder(p.replace(/\//g, process.platform === 'win32' ? '\\' : '/')))
   ipcMain.on('fs:openExternal', (_e, p: string) => shell.openPath(p))
 
+  ipcMain.handle('settings:get', () => settings.get())
+  ipcMain.handle('settings:set', (_e, patch) => settings.set(patch))
+
   ipcMain.handle('git:status', (_e, root: string) => git.status(root))
   ipcMain.handle('git:show', (_e, p: string) => git.show(p))
 
@@ -209,6 +228,7 @@ protocol.registerSchemesAsPrivileged([
 
 app.whenReady().then(() => {
   saved = loadState()
+  settings.load()
   protocol.handle('byndery-file', (req) => {
     let p = decodeURIComponent(new URL(req.url).pathname)
     if (/^\/[A-Za-z]:\//.test(p)) p = p.slice(1)

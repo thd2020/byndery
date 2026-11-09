@@ -11,7 +11,7 @@ export function isAppShortcut(e: KeyboardEvent): boolean {
   if (e.code === 'Backquote') return true
   if (k === 'tab' || k === 'pageup' || k === 'pagedown') return true
   if (e.shiftKey && k === 'e') return true
-  if (k === '=' || k === '-' || k === '0') return true
+  if (k === '=' || k === '-' || k === '0' || k === ',') return true
   return false
 }
 

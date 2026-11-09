@@ -21,6 +21,10 @@ export interface ShellSpec {
 export interface ShellDirs {
   integration: string
   vendor: string
+  /** The one-line file that says which command languages the prompt accepts. */
+  routing: string
+  /** A writable per-user temp folder. */
+  temp: string
 }
 
 const tmp = (): string | undefined => (process.env.TEMP ? normalize(process.env.TEMP) : undefined)
@@ -67,8 +71,11 @@ function zshEnv(dirs: ShellDirs): Record<string, string> {
   const env: Record<string, string> = {
     ZDOTDIR: zdot,
     BYNDERY_ZDOTDIR: zdot,
-    BYNDERY_USER_ZDOTDIR: process.env.ZDOTDIR ?? ''
+    BYNDERY_USER_ZDOTDIR: process.env.ZDOTDIR ?? '',
+    BYNDERY_ROUTING_FILE: dirs.routing
   }
+  const plugins = join(dirs.vendor, 'zsh-plugins')
+  if (existsSync(plugins)) env.BYNDERY_ZSH_PLUGINS = plugins
   const p10k = join(dirs.vendor, 'powerlevel10k')
   if (existsSync(join(p10k, 'powerlevel10k.zsh-theme'))) {
     env.BYNDERY_P10K = p10k
@@ -98,6 +105,8 @@ export function defaultShell(dirs: ShellDirs): ShellSpec {
           // UCRT64 is the environment MSYS2 recommends; inheriting the Windows
           // PATH keeps node, claude, codex and every other Windows tool on hand.
           MSYSTEM: 'UCRT64',
+          // Scratch space for the command router, per user and always writable.
+          BYNDERY_TMP: dirs.temp,
           MSYS2_PATH_TYPE: 'inherit',
           CHERE_INVOKING: '1'
         }),

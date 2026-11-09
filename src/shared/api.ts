@@ -92,11 +92,25 @@ export interface Bridge {
     write(text: string): void
     read(): Promise<string>
   }
+  settings: {
+    get(): Promise<Settings>
+    set(patch: Partial<Settings>): Promise<Settings>
+    onChange(cb: (s: Settings) => void): void
+  }
   menu(items: MenuItem[]): Promise<string | null>
   /** Native message box; resolves to the index of the button pressed. */
   confirm(message: string, detail: string, buttons: string[]): Promise<number>
   devtools(): void
   sys: { windowsBuild?: number; home: string }
+}
+
+export interface Settings {
+  /** Which command languages the Windows prompt accepts. */
+  commands: { linux: boolean; powershell: boolean; cmd: boolean }
+}
+
+export const DEFAULT_SETTINGS: Settings = {
+  commands: { linux: true, powershell: true, cmd: true }
 }
 
 export interface MenuItem {

@@ -97,6 +97,10 @@ const typeInTerminal = async (text) => {
   await win.keyboard.press('Enter')
 }
 const promptCount = () => win.evaluate(() => window.__byndery.terms.active.marks.length)
+// The output of the last run of `cmd`, from its prompt line on. Routed lines
+// show a PS or cmd tag between the prompt mark and the command.
+const since = (text, cmd) =>
+  text.slice(Math.max(...['❯ ', '❯ PS ', '❯ cmd '].map((m) => text.lastIndexOf(m + cmd))))
 const norm = (p) => p.replace(/\\/g, '/').replace(/^[a-z]:/, (d) => d.toUpperCase())
 
 await step('The default shell starts in the workspace with shell integration', async () => {
@@ -252,12 +256,59 @@ await step('One prompt runs zsh, PowerShell cmdlets, cmd built-ins and Windows p
     await typeInTerminal(cmd)
     await waitFor(async () => (await promptCount()) > before, `prompt after ${cmd}`, 20000)
     const text = await termText()
-    assert.ok(expect.test(text.slice(text.lastIndexOf(cmd))), `${cmd} printed ${JSON.stringify(text.slice(text.lastIndexOf(cmd)).slice(0, 200))}`)
+    assert.ok(expect.test(since(text, cmd)), `${cmd} printed ${JSON.stringify(since(text, cmd).slice(0, 200))}`)
   }
   await run("Get-Date -Format 'yyyy-MM' | Write-Output", /20\d\d-\d\d/)
   await run('ver', /Microsoft Windows/)
   await run('whoami.exe', /whoami\.exe\n(?!zsh:)\S+/)
   await run('echo $ZSH_VERSION', /\d+\.\d+/)
+})
+
+await step('PowerShell and cmd lines hand their folder, variables and exit code back', async () => {
+  const shell = await win.evaluate(() => window.__byndery.terms.active.info.shell)
+  if (process.platform !== 'win32' || shell !== 'zsh') return
+  const run = async (cmd) => {
+    const before = await promptCount()
+    await typeInTerminal(cmd)
+    await waitFor(async () => (await promptCount()) > before, `prompt after ${cmd}`, 20000)
+  }
+  await run('$env:BYNDERY_E2E = "from-ps"')
+  await run('echo $BYNDERY_E2E')
+  assert.ok((await termText()).includes('\nfrom-ps'), 'PowerShell variable reached zsh')
+  assert.ok((await termText()).includes('PS $env:BYNDERY_E2E'), 'routed line shows PS and the typed text')
+  await run(`cd /d ${join(ws, 'notes')}`)
+  await waitFor(async () => (await win.evaluate(() => window.__byndery.terms.active.cwd)).endsWith('/notes'), 'cmd cd /d moved zsh')
+  await run('cd ../src')
+  await run('pwsh: exit 4')
+  assert.equal(await win.evaluate(() => window.__byndery.terms.active.marks.at(-2).exit), 4)
+})
+
+await step('Settings switch a system off; its prefix still works', async () => {
+  if (process.platform !== 'win32') return
+  await win.keyboard.press('Control+Comma')
+  await waitFor(() => win.locator('.sheet:not([hidden])').count(), 'settings sheet')
+  await shot('06-settings')
+  await win.locator('.sheet-check input[data-key="cmd"]').uncheck()
+  await win.keyboard.press('Escape')
+  const run = async (cmd) => {
+    const before = await promptCount()
+    await typeInTerminal(cmd)
+    await waitFor(async () => (await promptCount()) > before, `prompt after ${cmd}`, 20000)
+    const t = await termText()
+    return since(t, cmd)
+  }
+  assert.match(await run('ver'), /command not found/)
+  assert.match(await run('cmd: ver'), /Microsoft Windows/)
+  await win.keyboard.press('Control+Comma')
+  await shot('07-settings-again')
+  await win.locator('.sheet-check input[data-key="cmd"]').check()
+  await win.locator('.sheet-check input[data-key="powershell"]').uncheck()
+  await win.locator('.sheet-check input[data-key="linux"]').uncheck()
+  assert.ok(await win.locator('.sheet-check input[data-key="cmd"]').isDisabled(), 'the last system cannot be switched off')
+  await win.locator('.sheet-check input[data-key="linux"]').check()
+  await win.locator('.sheet-check input[data-key="powershell"]').check()
+  await win.keyboard.press('Escape')
+  assert.match(await run('ver'), /Microsoft Windows/)
 })
 
 await step('Paths work in both forms: C:\\ and /c/', async () => {
