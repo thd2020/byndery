@@ -141,17 +141,16 @@ export class Keymap {
     return list.find((a) => a.scope === scope) ?? list.find((a) => a.scope === 'window') ?? null
   }
 
-  /** Actions bound to the same keys in overlapping scopes, for Settings to flag. */
+  /**
+   * Actions bound to the same keys in the same scope, for Settings to flag.
+   * A pane's binding over a window binding is not a clash: the pane's wins
+   * there on purpose, as Ctrl+T does in the editor.
+   */
   conflicts(id: string): Action[] {
     const a = this.actions.get(id)
     if (!a) return []
     const mine = new Set(this.keysOf(id).map(normalizeChord))
-    return this.all().filter(
-      (b) =>
-        b !== a &&
-        (b.scope === a.scope || b.scope === 'window' || a.scope === 'window') &&
-        this.keysOf(b.id).some((k) => mine.has(normalizeChord(k)))
-    )
+    return this.all().filter((b) => b !== a && b.scope === a.scope && this.keysOf(b.id).some((k) => mine.has(normalizeChord(k))))
   }
 }
 
