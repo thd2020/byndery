@@ -230,6 +230,10 @@ export class TermView {
     x.parser.registerOscHandler(133, (data) => {
       const [kind, arg] = data.split(';')
       if (kind === 'A') {
+        // A prompt redraw can send A again for the same line; keep one mark per prompt.
+        const last = this.marks[this.marks.length - 1]
+        const line = x.buffer.active.baseY + x.buffer.active.cursorY
+        if (last && !last.marker.isDisposed && last.marker.line === line && last.exit === undefined) return true
         const marker = x.registerMarker(0)
         if (marker) this.marks.push({ marker })
         if (this.marks.length > 2000) this.marks.splice(0, 500)

@@ -1,0 +1,5 @@
+if [[ -r $BYNDERY_USER_ZDOTDIR/.zprofile ]]; then
+  ZDOTDIR=$BYNDERY_USER_ZDOTDIR
+  source $BYNDERY_USER_ZDOTDIR/.zprofile
+  ZDOTDIR=$BYNDERY_ZDOTDIR
+fi

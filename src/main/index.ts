@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { homedir } from 'node:os'
 import { readFileSync, writeFileSync, existsSync, statSync } from 'node:fs'
-import { defaultShell } from './shell'
+import { defaultShell, type ShellDirs } from './shell'
 import * as term from './pty'
 import * as files from './files'
 import * as git from './git'
@@ -34,8 +34,12 @@ function saveState(patch: Partial<Saved>): void {
   }
 }
 
-const integrationDir = (): string =>
-  app.isPackaged ? join(process.resourcesPath, 'shell') : join(app.getAppPath(), 'resources', 'shell')
+// In a packaged build the shell scripts and the bundled MSYS2 sit in the app's
+// resources folder; in development they come from the repository.
+const shellDirs = (): ShellDirs =>
+  app.isPackaged
+    ? { integration: join(process.resourcesPath, 'shell'), vendor: join(process.resourcesPath, 'vendor') }
+    : { integration: join(app.getAppPath(), 'resources', 'shell'), vendor: join(app.getAppPath(), 'vendor') }
 
 function initialWorkspace(): string {
   const arg = process.argv.slice(app.isPackaged ? 1 : 2).find((a) => !a.startsWith('-') && a !== '.')
@@ -140,7 +144,7 @@ function registerIpc(): void {
 
   ipcMain.handle('term:create', (e, cwd: string, cols: number, rows: number) => {
     saveState({ workspace: cwd })
-    return term.createTerminal(e.sender, defaultShell(integrationDir()), cwd, cols, rows)
+    return term.createTerminal(e.sender, defaultShell(shellDirs()), cwd, cols, rows)
   })
   ipcMain.on('term:write', (_e, id: number, data: string) => term.write(id, data))
   ipcMain.on('term:ack', (_e, id: number, n: number) => term.ack(id, n))
