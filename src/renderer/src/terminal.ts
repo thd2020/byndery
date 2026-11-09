@@ -430,10 +430,17 @@ export class TermView {
     x.attachCustomKeyEventHandler((e) => {
       if (e.type !== 'keydown') return true
       const mod = isMac ? e.metaKey : e.ctrlKey
-      // Copy when there is a selection, as Windows Terminal does; otherwise Ctrl+C is SIGINT.
-      if (mod && !e.altKey && e.key.toLowerCase() === 'c' && x.hasSelection() && (e.shiftKey || !isMac || e.metaKey)) {
+      // Copy when there is a selection; otherwise Ctrl+C is SIGINT. The
+      // selection stays, as in VS Code: tools that read selected text send
+      // their own Ctrl+C (Phevere does, half a second after a drag), and
+      // clearing on copy made every selection vanish. Typing clears it.
+      if (mod && !e.altKey && e.code === 'KeyC' && x.hasSelection() && (e.shiftKey || !isMac || e.metaKey)) {
         api.clipboard.write(x.getSelection())
-        if (!e.shiftKey) x.clearSelection()
+        e.preventDefault()
+        return false
+      }
+      if (e.key === 'Escape' && !mod && !e.shiftKey && !e.altKey && x.hasSelection()) {
+        x.clearSelection()
         e.preventDefault()
         return false
       }
