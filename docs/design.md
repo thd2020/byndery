@@ -107,6 +107,25 @@ Every line in PowerShell or cmd starts a fresh process for now, so PowerShell's 
 
 Powerlevel10k's git segment does not appear inside worktrees whose `.git` file records a Windows path (`gitdir: C:/…`), which is what Git for Windows writes by default. gitstatusd, built for MSYS2, cannot follow that path. Running `git config --global worktree.useRelativePaths true` before creating worktrees avoids it.
 
+## Command memory
+
+byndery remembers every command with its output, folder, exit code, duration and time, and Ctrl+R searches all of it. Shell history keeps only the command; byndery has the output too, because shell integration already marks where each command's output starts and ends on screen.
+
+![Screenshot of the command history panel: a search for a Chinese word lists the PowerShell command whose output contained it, with that output on the right](design.assets/history.png)
+
+*Searching 十一月 finds the `Get-Date` command by its output. Ctrl+R cycles the scope; Enter runs the command again and Tab puts it on the prompt to edit.*
+
+The model is Atuin, which keeps shell history in SQLite and added output capture of its own in 2026. byndery follows its choices where they apply:
+
+- Ctrl+R opens the search and cycles its scope: everything, this workspace, this folder, this terminal. Enter runs the selected command and Tab puts it on the prompt, as in Atuin's shipped config.
+- Search matches any part of a command or its output, three characters or longer, in any script. It is SQLite's FTS5 index with the trigram tokenizer, built into the Node.js inside Electron, so nothing native is added.
+- A command typed with a leading space is not kept. Credentials in commands and output (provider tokens, private keys, JWTs, `password=` values) are replaced with ‹redacted› before anything is written. The output of commands that exist to print secrets, such as `printenv`, `gh auth token` and `cat .env`, is never kept.
+- Each output keeps its first and last half megabyte, and the oldest outputs are dropped once all of them pass 512 MB; the commands stay.
+- On first start, earlier commands come in from `$HISTFILE` or `~/.zsh_history` and `~/.bash_history`, without output.
+- Settings has a switch to stop remembering and a button to clear everything.
+
+Every row carries a UUID, so a later sync can merge the histories of several machines without collisions. Sync and sharing a command with its output are the next steps for this part.
+
 ## Licences of the bundled parts
 
 MSYS2's packages, zsh, Powerlevel10k and gitstatusd run as separate programs that byndery starts, so their licences do not extend to byndery's own MIT code. Shipping them requires keeping their notices and making the source of the GPL parts available; [`THIRD-PARTY-NOTICES.md`](../THIRD-PARTY-NOTICES.md) does both.
@@ -118,7 +137,7 @@ The order below follows what the research ranked most valuable and what the firs
 1. One PowerShell process per terminal tab, so PowerShell variables persist between lines and routed lines start instantly.
 2. Review agent edits as hunks you keep or revert, collected in one review view.
 3. Register as Claude Code's IDE (the `~/.claude/ide/` lock file), so the agent sees the editor's selection and can open diffs.
-4. A memory of every command with its output, exit code and folder, searchable later; the model is Atuin, which keeps shell history in SQLite. Then sync across devices with end-to-end encryption on the Holarky account, and sharing a command with its output as a link.
+4. Sync the command memory across devices with end-to-end encryption on the Holarky account, and share a command with its output as a link, choosing which parts go, as Warp's shared blocks do.
 5. Attention marks: a badge on a terminal tab when its command finishes or an agent waits for input.
 6. Split terminals, and a terminal search bar.
 7. The installer, with the bundle and the notices in it.

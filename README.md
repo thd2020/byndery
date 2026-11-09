@@ -10,6 +10,7 @@ The name comes from a bindery, the workshop where loose sheets are sewn into one
 
 ## Recent changes
 
+- **2026-11-09.** Command memory: byndery keeps every command with its output, folder, exit code and time, and Ctrl+R searches all of it. Secrets are redacted before anything is stored, and Settings can switch it off or clear it.
 - **2026-11-09.** First working build: terminal, file tree and editor in one window. On Windows the terminal is zsh with Powerlevel10k, suggestions and syntax highlighting on a bundled MSYS2, and the same prompt also runs PowerShell cmdlets, cmd built-ins and paths written as `C:\` or `/c/`. The design and the reasons for it are in [`docs/design.md`](docs/design.md).
 
 ## Running it
@@ -41,6 +42,7 @@ The second command builds the shell environment in `vendor/`: MSYS2 with zsh and
 | Ctrl+click on a path in the terminal | Open it in the editor at that line |
 | Ctrl+L in the editor | Send the file and selected lines to the terminal as `@path#L3-9` |
 | Ctrl+E in the editor | Switch Markdown between rendered and source |
+| Ctrl+R in the terminal | Search every earlier command and its output; Enter runs it, Tab puts it on the prompt |
 | Ctrl+Up, Ctrl+Down in the terminal | Previous or next prompt |
 | Ctrl+` | Move between the terminal and the editor |
 | Ctrl+Shift+` | New terminal |
@@ -62,7 +64,7 @@ npm test
 npm run build && npm run e2e
 ```
 
-`npm run e2e` starts the real app on a scratch repository and drives it: shell integration, links, the tree, the editor, the command router and both path forms.
+`npm run e2e` starts the real app on a scratch repository and drives it: shell integration, links, the tree, the editor, the command router, the command memory and both path forms.
 
 ## Licence
 

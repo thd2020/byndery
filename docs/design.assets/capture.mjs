@@ -26,7 +26,13 @@ writeFileSync(join(demo, 'plan.md'), '# Plan\n\nShip the terminal first.\n')
 writeFileSync(join(demo, 'ideas.md'), 'later\n')
 const demoMsys = '/' + demo[0].toLowerCase() + demo.slice(2).split(String.fromCharCode(92)).join('/')
 
-const app = await _electron.launch({ args: ['.', repo, `--user-data-dir=${profile}`], cwd: repo })
+// The shell keeps its history in the scratch profile, never in the user's home.
+const msysPath = (p) => (process.platform === 'win32' ? '/' + p[0].toLowerCase() + p.slice(2).split(String.fromCharCode(92)).join('/') : p)
+const app = await _electron.launch({
+  args: ['.', repo, `--user-data-dir=${profile}`],
+  cwd: repo,
+  env: { ...process.env, HISTFILE: msysPath(join(profile, 'shell_history')) }
+})
 const win = await app.firstWindow()
 await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1440, 860))
 await win.waitForFunction(() => window.__byndery?.terms.active?.marks.length > 0, null, { timeout: 20000 })
@@ -48,6 +54,16 @@ await run("Get-Date -Format 'dddd d MMMM' | Write-Output")
 await run('ver')
 await run('sleep 2.4')
 await run('ls')
+// The command memory, searched by text that appears only in an output.
+await win.keyboard.press('Control+R')
+await win.waitForSelector('.history:not([hidden])')
+await win.keyboard.type('十一月')
+await win.waitForTimeout(500)
+const panel = await win.locator('.history').boundingBox()
+await win.screenshot({ path: join(here, 'history.png'), clip: panel })
+await win.keyboard.press('Escape')
+await win.waitForTimeout(200)
+
 const term = await win.locator('#terminals').boundingBox()
 await win.screenshot({ path: join(here, 'prompt.png'), clip: { x: term.x, y: term.y + 32, width: term.width, height: 470 } })
 await win.locator('.row', { hasText: 'docs' }).first().click()
@@ -72,4 +88,4 @@ await win.screenshot({ path: join(here, 'settings.png'), clip: { x: sheet.x - 16
 await app.close()
 rmSync(profile, { recursive: true, force: true })
 rmSync(demo, { recursive: true, force: true })
-console.log('saved overview-light.png, overview-dark.png, prompt.png and settings.png')
+console.log('saved overview-light.png, overview-dark.png, prompt.png, history.png and settings.png')
