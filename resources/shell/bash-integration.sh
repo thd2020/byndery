@@ -2,7 +2,8 @@
 # Loaded with `bash --init-file <this> -i`. It replays the startup files bash
 # would have read as a login shell, then reports prompts, commands and the
 # working directory with OSC 133 and OSC 7 so the app can mark commands and
-# keep the file tree in step with the shell.
+# keep the file tree in step with the shell. prompt.sh beside it supplies the
+# default prompt theme.
 
 if [ -n "$BYNDERY_SHELL_LOGIN" ]; then
   unset BYNDERY_SHELL_LOGIN
@@ -31,6 +32,15 @@ if [ -z "$__byndery_loaded" ]; then
     if [ "$__byndery_in_command" = 1 ]; then
       printf '\e]133;D;%s\a' "$status"
       __byndery_in_command=0
+      __byndery_last_status=$status
+      if [ -n "$__byndery_t0" ] && [ -n "$EPOCHREALTIME" ]; then
+        local t1=$EPOCHREALTIME
+        __byndery_last_duration=$(( (10#${t1//[.,]/} - 10#${__byndery_t0//[.,]/}) / 1000 ))
+      fi
+    else
+      # An empty Enter clears the previous command's status and time.
+      __byndery_last_status=0
+      __byndery_last_duration=
     fi
     # Git Bash reports $PWD as /c/Users/me or, when started in a Windows
     # folder, as C:/Users/me; either way the URL needs a slash before it.
@@ -59,14 +69,20 @@ if [ -z "$__byndery_loaded" ]; then
     [ "$__byndery_in_prompt" = 1 ] && return
     case "$BASH_COMMAND" in __byndery_*) return ;; esac
     __byndery_in_command=1
+    __byndery_t0=$EPOCHREALTIME
     printf '\e]133;C\a'
   }
 
+  [ -r "${BASH_SOURCE[0]%/*}/prompt.sh" ] && . "${BASH_SOURCE[0]%/*}/prompt.sh"
+  __byndery_tail=__byndery_wrap_ps1
+  [ -n "$__byndery_theme_on" ] && __byndery_tail="__byndery_theme; __byndery_wrap_ps1"
+
   if [[ "$(declare -p PROMPT_COMMAND 2>/dev/null)" == "declare -a"* ]]; then
-    PROMPT_COMMAND=(__byndery_precmd "${PROMPT_COMMAND[@]}" __byndery_wrap_ps1)
+    PROMPT_COMMAND=(__byndery_precmd "${PROMPT_COMMAND[@]}" "$__byndery_tail")
   else
-    PROMPT_COMMAND="__byndery_precmd${PROMPT_COMMAND:+; $PROMPT_COMMAND}; __byndery_wrap_ps1"
+    PROMPT_COMMAND="__byndery_precmd${PROMPT_COMMAND:+; $PROMPT_COMMAND}; $__byndery_tail"
   fi
+  [ -n "$__byndery_theme_on" ] && __byndery_theme
   __byndery_wrap_ps1
   trap '__byndery_preexec' DEBUG
 fi
