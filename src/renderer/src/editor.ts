@@ -154,10 +154,37 @@ export class EditorArea {
     return !this.section.hidden
   }
 
+  private opening = new Map<string, Promise<void>>()
+
   /** Opens a file, reusing the preview tab for single clicks the way VS Code and Warp do. */
   async open(path: string, opts: { line?: number; col?: number; pin?: boolean } = {}): Promise<void> {
-    let tab = this.tabs.find((x) => x.path === path)
-    if (!tab) {
+    // A click and a double click arrive while the first read is still in
+    // flight; they wait for it instead of opening the file twice.
+    const pending = this.opening.get(path)
+    if (pending) {
+      await pending
+      return this.open(path, opts)
+    }
+    if (!this.tabs.some((x) => x.path === path)) {
+      const p = this.openNew(path, opts)
+      this.opening.set(path, p)
+      try {
+        await p
+      } finally {
+        this.opening.delete(path)
+      }
+      return
+    }
+    const tab = this.tabs.find((x) => x.path === path)!
+    if (opts.pin) this.pin(tab)
+    this.renderTab(tab)
+    this.activate(tab)
+    if (opts.line) this.goto(opts.line, opts.col)
+  }
+
+  private async openNew(path: string, opts: { line?: number; col?: number; pin?: boolean }): Promise<void> {
+    let tab: Tab | undefined
+    {
       const r = await api.fs.read(path)
       const isMd = /\.(md|markdown|mdx)$/i.test(path)
       tab = {
@@ -199,7 +226,7 @@ export class EditorArea {
         this.tabBar.append(tab.el)
       }
       void this.loadLanguage(tab)
-    } else if (opts.pin) this.pin(tab)
+    }
     this.renderTab(tab)
     this.activate(tab)
     if (opts.line) this.goto(opts.line, opts.col)

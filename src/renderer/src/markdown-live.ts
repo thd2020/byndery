@@ -182,7 +182,8 @@ function build(view: EditorView, opts: LiveOptions): DecorationSet {
               decos.push(mark('md-syntax').range(n.from, textFrom))
               decos.push(mark('md-syntax').range(textTo, n.to))
             }
-            return false
+            // Keep walking: inline code or emphasis inside the link text still renders.
+            return undefined
           }
           case 'URL':
             if (n.node.parent?.name !== 'Link' && n.node.parent?.name !== 'Image') {
