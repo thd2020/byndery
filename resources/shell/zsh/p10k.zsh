@@ -66,6 +66,11 @@
       typeset -g my_git_format=$P9K_CONTENT
       return
     fi
+    # Nothing to show until gitstatus has answered once.
+    if [[ -z $VCS_STATUS_LOCAL_BRANCH$VCS_STATUS_TAG$VCS_STATUS_COMMIT ]]; then
+      typeset -g my_git_format=''
+      return
+    fi
     local clean='%2F' modified='%3F' untracked='%6F' conflicted='%1F'
     if (( ! $1 )); then
       clean='%8F' modified='%8F' untracked='%8F' conflicted='%8F'
@@ -102,6 +107,7 @@
   typeset -g POWERLEVEL9K_VCS_VISUAL_IDENTIFIER_COLOR=2
   typeset -g POWERLEVEL9K_VCS_LOADING_VISUAL_IDENTIFIER_COLOR=8
   typeset -g POWERLEVEL9K_VCS_BACKENDS=(git)
+  typeset -g POWERLEVEL9K_VCS_LOADING_TEXT=
 
   # Right side: failures, slow commands, jobs, Python environments, the clock.
   typeset -g POWERLEVEL9K_STATUS_EXTENDED_STATES=true

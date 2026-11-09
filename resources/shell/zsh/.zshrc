@@ -40,3 +40,4 @@ unset __byndery_prompt_before __byndery_user_zshrc
 
 source $BYNDERY_ZDOTDIR/integration.zsh
 [[ $OSTYPE == (msys|cygwin)* ]] && source $BYNDERY_ZDOTDIR/windows.zsh
+source $BYNDERY_ZDOTDIR/plugins.zsh

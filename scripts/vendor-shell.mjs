@@ -101,6 +101,11 @@ function configure() {
   if (!/^db_home:\s*windows/m.test(text)) {
     writeFileSync(nss, text.replace(/^db_home:.*$/m, 'db_home: windows'))
   }
+  // /tmp is the user's own temp folder, MSYS2's usual setup. The bundle may
+  // sit under Program Files, where msys64/tmp is not writable.
+  const fstab = join(msys, 'etc', 'fstab')
+  const ft = readFileSync(fstab, 'utf8')
+  if (!/^\s*none\s+\/tmp\s+usertemp/m.test(ft)) writeFileSync(fstab, ft.trimEnd() + '\nnone /tmp usertemp binary,posix=0 0 0\n')
   // Put the chosen mirror first in each pacman mirror list.
   if (mirror !== MIRRORS.official) {
     const dir = join(msys, 'etc', 'pacman.d')
@@ -170,15 +175,80 @@ function fetchGitstatus(p10k) {
   }
 }
 
+// Every bundled package with its version and licence, shipped beside the
+// bundle so the notices always match what is actually inside it.
+function writePackageList() {
+  const r = spawnSync(join(msys, 'usr', 'bin', 'bash.exe'), ['-lc', 'pacman -Qi'], {
+    env: { ...process.env, MSYSTEM: 'MSYS', CHERE_INVOKING: '1' },
+    encoding: 'utf8'
+  })
+  const rows = []
+  let name = ''
+  let version = ''
+  for (const line of r.stdout.split(/\r?\n/)) {
+    const [k, ...rest] = line.split(':')
+    const v = rest.join(':').trim()
+    if (k.trim() === 'Name') name = v
+    else if (k.trim() === 'Version') version = v
+    else if (k.trim() === 'Licenses') rows.push(`${name}\t${version}\t${v.replace(/^spdx:/, '')}`)
+  }
+  const header = [
+    `# Packages in byndery's MSYS2 bundle, built from ${MSYS2.file}.`,
+    '# Sources for every package and version: https://repo.msys2.org/msys/sources/',
+    '# name\tversion\tlicence'
+  ]
+  writeFileSync(join(vendor, 'msys2-packages.txt'), [...header, ...rows, ''].join('\n'))
+  log(`listed ${rows.length} packages`)
+}
+
+// The zsh plugins most people add by hand, shipped so they work from the
+// first prompt. Each is a shallow clone without its .git folder.
+const PLUGINS = [
+  ['zsh-autosuggestions', 'https://github.com/zsh-users/zsh-autosuggestions.git'],
+  ['zsh-syntax-highlighting', 'https://github.com/zsh-users/zsh-syntax-highlighting.git'],
+  ['zsh-completions', 'https://github.com/zsh-users/zsh-completions.git'],
+  ['zsh-history-substring-search', 'https://github.com/zsh-users/zsh-history-substring-search.git']
+]
+// Oh My Zsh's git aliases need only two of its files, not the whole framework.
+const OMZ_GIT = [
+  ['lib/git.zsh', 'git-lib.zsh'],
+  ['plugins/git/git.plugin.zsh', 'git.plugin.zsh'],
+  ['LICENSE.txt', 'LICENSE']
+]
+
+async function fetchPlugins() {
+  const dir = join(vendor, 'zsh-plugins')
+  mkdirSync(dir, { recursive: true })
+  for (const [name, url] of PLUGINS) {
+    const dest = join(dir, name)
+    if (existsSync(dest) && !force) continue
+    rmSync(dest, { recursive: true, force: true })
+    log(`cloning ${name}`)
+    const r = spawnSync('git', ['clone', '--depth', '1', url, dest], { stdio: 'inherit' })
+    if (r.status !== 0) throw new Error(`could not clone ${name}`)
+    rmSync(join(dest, '.git'), { recursive: true, force: true })
+  }
+  const omz = join(dir, 'ohmyzsh-git')
+  if (!existsSync(omz) || force) {
+    mkdirSync(omz, { recursive: true })
+    for (const [src, out] of OMZ_GIT) {
+      log(`fetching Oh My Zsh ${src}`)
+      await download(`https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/${src}`, join(omz, out))
+    }
+  }
+}
+
 const archiveStep = async () => {
   if (process.platform !== 'win32') return
   const archive = await fetchArchive()
   extract(archive)
   configure()
   installPackages()
+  writePackageList()
 }
 
 await archiveStep()
 const p10k = fetchP10k()
 fetchGitstatus(p10k)
+await fetchPlugins()
 log('done')
