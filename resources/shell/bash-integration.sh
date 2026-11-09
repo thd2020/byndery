@@ -86,3 +86,7 @@ if [ -z "$__byndery_loaded" ]; then
   __byndery_wrap_ps1
   trap '__byndery_preexec' DEBUG
 fi
+
+# The file tree sends " cd <folder>" with a leading space when it syncs with
+# the terminal; this keeps those lines out of the history.
+case ":$HISTCONTROL:" in *:ignorespace:*|*:ignoreboth:*) ;; *) HISTCONTROL="ignorespace${HISTCONTROL:+:$HISTCONTROL}" ;; esac

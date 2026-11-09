@@ -125,11 +125,49 @@ await step('Tree shows git status for modified and untracked files', async () =>
   assert.ok(await win.locator('.row.dir.has-M', { hasText: 'src' }).count(), 'src folder carries the modified dot')
 })
 
-await step('Tree follows the terminal into a folder after cd', async () => {
+const cwdNow = () => win.evaluate(() => window.__byndery.terms.active.cwd)
+const rootNow = () => win.evaluate(() => window.__byndery.tree.root)
+const same = (a, b) => norm(a).toLowerCase() === norm(b).toLowerCase()
+
+await step('Tree marks the terminal folder after cd', async () => {
   const before = await promptCount()
   await typeInTerminal('cd src')
   await waitFor(async () => (await promptCount()) > before, 'prompt after cd')
   await waitFor(async () => (await win.locator('.row.cwd').textContent())?.includes('src'), 'cwd marker on src')
+  assert.equal(await win.evaluate(() => window.__byndery.sync), false, 'sync starts off')
+})
+
+await step('With sync on, the tree and the terminal follow each other anywhere', async () => {
+  await win.locator('#follow-button').click()
+  // A folder clicked in the tree becomes the terminal folder.
+  await win.locator('.row.dir', { hasText: 'notes' }).click()
+  await waitFor(async () => (await cwdNow()).endsWith('/notes'), 'terminal in notes')
+  // The terminal leaving the tree's folder takes the tree along.
+  await typeInTerminal('cd ../..')
+  const parent = norm(join(ws, '..'))
+  await waitFor(async () => same(await rootNow(), parent), 'tree root moved up with the terminal')
+  assert.equal(await win.locator('#tree-path .crumb.current').textContent(), parent.split('/').pop())
+  // Going into a folder from the tree sends the terminal there.
+  await win.evaluate((p) => window.__byndery.tree.reveal(p), norm(ws))
+  await win.locator('.row.dir.selected').dblclick()
+  await waitFor(async () => same(await rootNow(), ws), 'tree root back in the workspace')
+  await waitFor(async () => same(await cwdNow(), ws), 'terminal followed into the workspace')
+  // A typed path in the other form, then Alt+Up.
+  await win.evaluate(() => window.__byndery.tree.focus())
+  await win.keyboard.press('Control+Shift+L')
+  await win.keyboard.type(msysPath(join(ws, 'src')))
+  await win.keyboard.press('Enter')
+  await waitFor(async () => (await cwdNow()).endsWith('/src'), 'terminal in src from the path bar')
+  await win.evaluate(() => window.__byndery.tree.focus())
+  await win.keyboard.press('Alt+ArrowUp')
+  await waitFor(async () => same(await cwdNow(), ws), 'terminal back in the workspace after Alt+Up')
+  // The cd lines the tree sent are not remembered.
+  const remembered = await win.evaluate(() => window.byndery.history.search({ text: 'cd --', scope: 'all' }))
+  assert.equal(remembered.length, 0, 'sync cd lines stay out of the command memory')
+  await win.locator('#follow-button').click()
+  const before = await promptCount()
+  await typeInTerminal('cd src')
+  await waitFor(async () => (await promptCount()) > before, 'prompt after cd src')
 })
 
 await step('A failed command gets a red mark beside its prompt', async () => {

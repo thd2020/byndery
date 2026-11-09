@@ -28,11 +28,13 @@
 
     <main id="layout">
       <aside id="sidebar">
-        <div class="pane-head">
-          <span class="pane-title">Files</span>
-          <span class="spacer"></span>
-          <button id="follow-button" class="icon-btn" title="Follow the terminal's folder" aria-pressed="true">
-            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4.5 6 7.5 3 10.5" /><path d="M8 11h5" /></svg>
+        <div class="pane-head" id="tree-head">
+          <button id="tree-up" class="icon-btn" title="Parent folder (Alt+Up)">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 12.5v-9" /><path d="M4.5 7 8 3.5 11.5 7" /></svg>
+          </button>
+          <nav id="tree-path" class="crumbs" aria-label="Folder"></nav>
+          <button id="follow-button" class="icon-btn" title="Sync with terminal" aria-pressed="false">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.8 7A5.2 5.2 0 0 1 12 4.3" /><path d="M12.6 1.9v2.7H9.9" /><path d="M13.2 9A5.2 5.2 0 0 1 4 11.7" /><path d="M3.4 14.1v-2.7h2.7" /></svg>
           </button>
           <button id="collapse-button" class="icon-btn" title="Collapse folders">
             <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 9.5 8 6l4 3.5" /></svg>

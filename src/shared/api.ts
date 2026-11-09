@@ -79,6 +79,8 @@ export interface Bridge {
     onChange(cb: (changes: FileChange[]) => void): void
     reveal(path: string): void
     openExternal(path: string): void
+    /** Drive roots on Windows (C:/, D:/), or "/" elsewhere. */
+    drives(): Promise<string[]>
     /** Files under root whose relative path matches, for quick open. Capped and ignore-aware. */
     find(root: string): Promise<string[]>
     rename(from: string, to: string): Promise<void>

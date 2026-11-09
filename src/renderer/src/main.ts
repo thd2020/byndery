@@ -1,5 +1,5 @@
 import './canvas-font-shim'
-import { basename, fromMsys, isWindowsPath, join, normalize, relative } from '../../shared/paths'
+import { basename, dirname, fromMsys, isWindowsPath, join, normalize, relative, shellQuote, toMsys } from '../../shared/paths'
 import { api, isMac } from './bridge'
 import { cssVar, onThemeChange } from './theme'
 import { TerminalManager } from './terminal'
@@ -9,6 +9,7 @@ import { Palette, type Command } from './palette'
 import { SettingsSheet } from './settings'
 import { HistoryPanel } from './history-panel'
 import { Keymap, focusScope, type Action } from './keymap'
+import { PathBar } from './pathbar'
 import '@fontsource-variable/source-serif-4/opsz.css'
 import '@fontsource-variable/source-serif-4/opsz-italic.css'
 import './editor.css'
@@ -35,8 +36,10 @@ const savePrefs = (): void => {
 const terms = new TerminalManager($('#term-host'), $('#term-tabs .tabs'))
 const tree = new FileTree($('#tree'))
 const editor = new EditorArea($('#editor'), $('#editor-tabs .tabs'), $('#editor-host'), $('#editor-notice'), $('#editor-empty'), $('#md-toggle'))
+const pathBar = new PathBar($('#tree-path'))
 let root = ''
-let follow = prefs.follow !== false
+/** Tree and terminal folder sync, both ways, as in Dolphin's terminal panel. Off until switched on. */
+let follow = prefs.sync === true
 let files: string[] | null = null
 
 // Title bar colours follow the theme so the system caption buttons blend in.
@@ -54,9 +57,73 @@ async function setWorkspace(dir: string): Promise<void> {
   $('#ws-name').textContent = basename(root) || root
   $('#ws-button').title = `${root}\nOpen folder (Ctrl+O)`
   document.title = `${basename(root)} — byndery`
+  pathBar.set(root)
   await tree.setRoot(root)
-  void api.fs.watch(root)
+  // A whole drive is too much to watch; folders open in the tree still reload when revisited.
+  if (!/^([A-Z]:)?\/$/.test(root)) void api.fs.watch(root)
   void refreshGit()
+}
+
+// Folder history for the tree, as in a file manager: Alt+Left, Alt+Right, Alt+Up.
+const back: string[] = []
+const forward: string[] = []
+
+/** Shows `dir` as the tree's root. When syncing, the terminal goes there too. */
+async function navigate(dir: string, opts: { history?: 'push' | 'back' | 'forward'; fromTerminal?: boolean } = {}): Promise<void> {
+  const to = normalize(dir)
+  if (samePath(to, root)) return
+  if (opts.history !== 'back' && opts.history !== 'forward') forward.length = 0
+  if (opts.history === 'back') forward.push(root)
+  else back.push(root)
+  if (back.length > 100) back.shift()
+  await setWorkspace(to)
+  if (follow && !opts.fromTerminal) cdTerminal(to)
+  if (terms.active) void tree.setCwd(terms.active.cwd, follow)
+}
+
+function goBack(): void {
+  const to = back.pop()
+  if (to) void navigate(to, { history: 'back' })
+}
+function goForward(): void {
+  const to = forward.pop()
+  if (to) void navigate(to, { history: 'forward' })
+}
+
+/** Alt+Up. At a drive's root the other drives are offered instead. */
+async function goUp(): Promise<void> {
+  const up = dirname(root)
+  if (!samePath(up, root)) return navigate(up)
+  const drives = await api.fs.drives()
+  if (drives.length < 2) return
+  const id = await api.menu(drives.map((d) => ({ id: d, label: d.replace(/\/$/, ''), enabled: !samePath(d, root) })))
+  if (id) void navigate(id)
+}
+
+const samePath = (a: string, b: string): boolean =>
+  api.platform === 'win32' ? normalize(a).toLowerCase() === normalize(b).toLowerCase() : normalize(a) === normalize(b)
+
+/** The folder the tree last sent the terminal to, so its own cd does not echo back. */
+let sentCd: string | null = null
+
+/**
+ * Sends the active terminal to `dir` the way Dolphin does: only at an idle
+ * prompt, after clearing whatever is typed there, with a leading space so the
+ * shell keeps the cd out of its history.
+ */
+function cdTerminal(dir: string): void {
+  const t = terms.active
+  if (!t?.info || !t.info.integrated || t.status === 'busy' || t.status === 'exited') return
+  // A double click sends the first click's cd before the shell has moved; one is enough.
+  if (samePath(t.cwd, dir) || (sentCd != null && samePath(sentCd, dir))) return
+  sentCd = normalize(dir)
+  const shell = t.info.shell.toLowerCase()
+  const win = dir.replace(/\//g, '\\')
+  let line: string
+  if (shell.includes('pwsh') || shell.includes('powershell')) line = `\x1b Set-Location -LiteralPath '${win.replace(/'/g, "''")}'`
+  else if (shell === 'cmd') line = `\x1b cd /d "${win}"`
+  else line = `\x05\x15 cd -- ${shellQuote(t.info.msys ? toMsys(dir) : dir)}`
+  api.term.write(t.info.id, line + '\r')
 }
 
 // Git status refreshes after file changes settle. One run at a time; a change
@@ -107,12 +174,24 @@ api.fs.onChange((changes) => {
 // The coupling between panes.
 
 terms.cwdChanged.on((t) => {
-  if (t === terms.active) void tree.setCwd(t.cwd, follow)
+  if (t !== terms.active) return
+  const own = sentCd != null && samePath(sentCd, t.cwd)
+  sentCd = null
+  if (follow && relative(root, t.cwd) == null) {
+    void navigate(t.cwd, { fromTerminal: true })
+    return
+  }
+  // A cd the tree sent keeps the folder as the click left it, open or closed.
+  void tree.setCwd(t.cwd, follow, !own)
 })
 terms.activeChanged.on((t) => {
   if (!t) void tree.setCwd(null, false)
 })
-terms.commandFinished.on(() => scheduleGit())
+terms.commandFinished.on(() => {
+  // A cd that did not move the shell (a folder it cannot enter) is no longer pending.
+  sentCd = null
+  scheduleGit()
+})
 terms.openRequest.on((r) => {
   if (r.dir) {
     if (tree.root && relative(tree.root, r.path) != null) {
@@ -123,6 +202,12 @@ terms.openRequest.on((r) => {
   void editor.open(r.path, { line: r.line, col: r.col, pin: true })
 })
 tree.open.on(({ path, pin }) => void editor.open(path, { pin }))
+tree.folderClicked.on((dir) => {
+  if (follow) cdTerminal(dir)
+})
+tree.enter.on((dir) => void navigate(dir))
+tree.terminalHere.on((dir) => terms.create(dir))
+pathBar.navigate.on((dir) => void navigate(dir))
 tree.sendToTerminal.on((paths) => {
   const t = terms.active ?? terms.create()
   void t.send(paths.map((p) => t.pathForShell(p)).join(' ') + ' ')
@@ -199,10 +284,15 @@ function toggleSidebar(): void {
 
 function toggleFollow(): void {
   follow = !follow
-  prefs.follow = follow
+  prefs.sync = follow
+  delete prefs.follow
   applyLayout()
   savePrefs()
-  if (terms.active) void tree.setCwd(terms.active.cwd, follow)
+  // Switching sync on brings the tree to the terminal's folder.
+  const t = terms.active
+  if (!t) return
+  if (follow && relative(root, t.cwd) == null) void navigate(t.cwd, { fromTerminal: true })
+  else void tree.setCwd(t.cwd, follow)
 }
 
 /** Ctrl+`: from anywhere to the terminal, and from the terminal back to the editor. */
@@ -285,6 +375,10 @@ const actions: Action[] = [
   { id: 'tree.toggle', label: 'Show or Hide File Tree', keys: ['Mod+B'], scope: 'window', run: toggleSidebar },
   { id: 'tree.follow', label: 'Sync File Tree and Terminal Folder', keys: [], scope: 'window', run: toggleFollow },
   { id: 'tree.collapse', label: 'Collapse Folders', keys: [], scope: 'window', run: () => tree.collapseAll() },
+  { id: 'tree.up', label: 'Go to Parent Folder', keys: ['Alt+Up'], scope: 'tree', run: () => void goUp() },
+  { id: 'tree.back', label: 'Go Back', keys: ['Alt+Left'], scope: 'tree', run: goBack },
+  { id: 'tree.forward', label: 'Go Forward', keys: ['Alt+Right'], scope: 'tree', run: goForward },
+  { id: 'tree.editPath', label: 'Type a Folder Path', keys: ['Mod+Shift+L'], scope: 'tree', run: () => pathBar.edit() },
   { id: 'editor.new', label: 'New File', keys: ['Mod+T', 'Mod+N'], scope: 'editor', run: () => editor.newFile() },
   { id: 'editor.save', label: 'Save', keys: ['Mod+S'], scope: 'window', run: () => void editor.save() },
   { id: 'editor.close', label: 'Close Editor Tab', keys: ['Mod+W'], scope: 'window', run: () => void editor.close() },
@@ -336,10 +430,7 @@ const palette = new Palette($('#palette'), $<HTMLInputElement>('#palette-input')
       if (!st) return
       if (!st.dir) return editor.open(path, { pin: true, line }).then(() => editor.focus())
       if (relative(root, path) != null) await tree.reveal(path).then(() => tree.toggle(path, true))
-      else {
-        await setWorkspace(path)
-        terms.create(path)
-      }
+      else await navigate(path)
     })
 })
 
@@ -364,6 +455,12 @@ $('#ws-button').addEventListener('click', () => void openFolder())
 $('#search-button').addEventListener('click', () => palette.show(''))
 $('#new-term').addEventListener('click', () => terms.create())
 $('#follow-button').addEventListener('click', toggleFollow)
+$('#tree-up').addEventListener('click', () => void goUp())
+// Mouse back and forward buttons over the tree.
+$('#sidebar').addEventListener('mouseup', (e) => {
+  if (e.button === 3) goBack()
+  if (e.button === 4) goForward()
+})
 $('#collapse-button').addEventListener('click', () => tree.collapseAll())
 $('#term-tabs').addEventListener('dblclick', (e) => {
   if (e.target === $('#term-tabs') || e.target === $('#term-tabs .tabs')) terms.create()
@@ -382,4 +479,4 @@ void (async () => {
 })()
 
 // Handles for the end-to-end tests and for poking at the app from DevTools.
-;(window as unknown as { __byndery: unknown }).__byndery = { terms, tree, editor, palette, settings: settingsSheet, history: historyPanel, keymap }
+;(window as unknown as { __byndery: unknown }).__byndery = { terms, tree, editor, palette, settings: settingsSheet, history: historyPanel, keymap, navigate, get sync() { return follow } }

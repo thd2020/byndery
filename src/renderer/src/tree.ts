@@ -32,6 +32,12 @@ export class FileTree {
 
   readonly open = new Emitter<{ path: string; pin: boolean }>()
   readonly sendToTerminal = new Emitter<string[]>()
+  /** A folder row was clicked or opened with Enter. */
+  readonly folderClicked = new Emitter<string>()
+  /** Show this folder as the tree's root. */
+  readonly enter = new Emitter<string>()
+  /** Open a terminal in this folder. */
+  readonly terminalHere = new Emitter<string>()
 
   constructor(private el: HTMLElement) {
     el.append(this.spacer)
@@ -114,7 +120,9 @@ export class FileTree {
     el.addEventListener('click', (e) => this.onClick(el, e))
     el.addEventListener('dblclick', () => {
       const r = this.rows[Number(el.dataset.i)]
-      if (r && !r.entry.dir) this.open.emit({ path: r.entry.path, pin: true })
+      if (!r) return
+      if (r.entry.dir) this.enter.emit(r.entry.path)
+      else this.open.emit({ path: r.entry.path, pin: true })
     })
     el.addEventListener('contextmenu', (e) => {
       e.preventDefault()
@@ -195,8 +203,12 @@ export class FileTree {
     const r = this.rows[Number(el.dataset.i)]
     if (!r) return
     this.select(r.entry.path)
-    if (r.entry.dir) void this.toggle(r.entry.path)
-    else this.open.emit({ path: r.entry.path, pin: e.detail > 1 })
+    if (r.entry.dir) {
+      // The second click of a double click goes into the folder instead.
+      if (e.detail > 1) return
+      void this.toggle(r.entry.path)
+      this.folderClicked.emit(r.entry.path)
+    } else this.open.emit({ path: r.entry.path, pin: e.detail > 1 })
   }
 
   private select(p: string | null): void {
@@ -243,14 +255,17 @@ export class FileTree {
     this.paint()
   }
 
-  /** Marks the terminal's folder and, when following, opens the tree down to it. */
-  async setCwd(cwd: string | null, follow: boolean): Promise<void> {
+  /**
+   * Marks the terminal's folder. When syncing, the tree also opens down to it
+   * and selects it; `expand` opens the folder itself as well.
+   */
+  async setCwd(cwd: string | null, follow: boolean, expand = true): Promise<void> {
     this.cwd = cwd ? normalize(cwd) : null
     if (follow && this.cwd && this.cwd !== this.root) {
       const rel = relative(this.root, this.cwd)
       if (rel) {
-        await this.reveal(this.cwd, false)
-        if (!this.expanded.has(this.cwd)) await this.toggle(this.cwd, true)
+        await this.reveal(this.cwd, true)
+        if (expand && !this.expanded.has(this.cwd)) await this.toggle(this.cwd, true)
       }
     }
     this.paint()
@@ -326,8 +341,10 @@ export class FileTree {
         }
         break
       case 'Enter':
-        if (r?.entry.dir) void this.toggle(r.entry.path)
-        else if (r) this.open.emit({ path: r.entry.path, pin: true })
+        if (r?.entry.dir) {
+          void this.toggle(r.entry.path)
+          this.folderClicked.emit(r.entry.path)
+        } else if (r) this.open.emit({ path: r.entry.path, pin: true })
         break
       case ' ':
         if (r && !r.entry.dir) this.open.emit({ path: r.entry.path, pin: false })
@@ -349,6 +366,10 @@ export class FileTree {
     const dir = target.dir ? target.path : dirname(target.path)
     const id = await api.menu([
       ...(entry && !entry.dir ? [{ id: 'open', label: 'Open' }, { separator: true }] : []),
+      ...(entry?.dir ? [{ id: 'enter', label: 'Go Into Folder' }] : []),
+      ...(!entry && dirname(this.root) !== this.root ? [{ id: 'up', label: 'Go to Parent Folder', accel: 'Alt+Up' }] : []),
+      { id: 'terminal', label: 'Open Terminal Here' },
+      { separator: true },
       { id: 'new-file', label: 'New File…' },
       { id: 'new-folder', label: 'New Folder…' },
       { separator: true },
@@ -363,6 +384,15 @@ export class FileTree {
     switch (id) {
       case 'open':
         this.open.emit({ path: target.path, pin: true })
+        break
+      case 'enter':
+        this.enter.emit(target.path)
+        break
+      case 'up':
+        this.enter.emit(dirname(this.root))
+        break
+      case 'terminal':
+        this.terminalHere.emit(dir)
         break
       case 'new-file':
       case 'new-folder':

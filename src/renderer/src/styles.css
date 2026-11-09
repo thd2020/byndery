@@ -287,7 +287,68 @@ body.editor-max #editor {
 }
 
 #sidebar .pane-head {
-  padding-left: 14px;
+  padding-left: 6px;
+}
+
+/* The tree's folder as a breadcrumb; a click on its empty part edits it. */
+.crumbs {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  overflow-x: auto;
+  scrollbar-width: none;
+  white-space: nowrap;
+  cursor: text;
+  border-radius: var(--radius);
+}
+
+/* Scrolled to its end, a long path fades out on the left instead of cutting a name. */
+.crumbs.clipped {
+  mask-image: linear-gradient(to right, transparent, #000 28px);
+}
+
+.crumb {
+  flex: 0 0 auto;
+  height: 22px;
+  padding: 0 4px;
+  border-radius: 4px;
+  color: var(--text-3);
+  cursor: pointer;
+  transition: background var(--quick) var(--ease), color var(--quick) var(--ease);
+}
+
+.crumb:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.crumb.current {
+  color: var(--text-2);
+  font-weight: 600;
+}
+
+.crumb-sep {
+  flex: 0 0 auto;
+  color: var(--line-strong);
+  user-select: none;
+}
+
+.crumb-input {
+  width: 100%;
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  color: var(--text);
+  font: inherit;
+  outline: none;
+}
+
+.crumb-input.invalid {
+  border-color: var(--danger);
 }
 
 .pane-title {

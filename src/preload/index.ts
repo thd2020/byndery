@@ -36,6 +36,7 @@ const bridge: Bridge = {
     onChange: (cb) => void ipcRenderer.on('fs:change', (_e, c) => cb(c)),
     reveal: (p) => ipcRenderer.send('fs:reveal', p),
     openExternal: (p) => ipcRenderer.send('fs:openExternal', p),
+    drives: () => ipcRenderer.invoke('fs:drives'),
     find: (r) => ipcRenderer.invoke('fs:find', r),
     rename: (a, b) => ipcRenderer.invoke('fs:rename', a, b),
     trash: (p) => ipcRenderer.invoke('fs:trash', p),

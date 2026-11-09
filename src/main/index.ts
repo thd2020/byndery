@@ -178,6 +178,7 @@ function registerIpc(): void {
   ipcMain.handle('fs:write', (_e, p: string, text: string) => files.write(p, text))
   ipcMain.handle('fs:stat', (_e, p: string) => files.stat(p))
   ipcMain.handle('fs:watch', (e, root: string) => files.watch(e.sender, root))
+  ipcMain.handle('fs:drives', () => files.drives())
   ipcMain.handle('fs:find', (_e, root: string) => files.find(root))
   ipcMain.handle('fs:rename', (_e, a: string, b: string) => files.rename(a, b))
   ipcMain.handle('fs:trash', (_e, p: string) => shell.trashItem(p.replace(/\//g, process.platform === 'win32' ? '\\' : '/')))

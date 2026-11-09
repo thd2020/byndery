@@ -146,3 +146,11 @@ export function watch(owner: WebContents, root: string): void {
     watchers.delete(owner.id)
   })
 }
+
+/** Drive roots on Windows (C:/, D:/), or "/" elsewhere. */
+export async function drives(): Promise<string[]> {
+  if (process.platform !== 'win32') return ['/']
+  const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')
+  const found = await Promise.all(letters.map((l) => fsp.access(l + ':/').then(() => l + ':/', () => null)))
+  return found.filter((d): d is string => d !== null)
+}

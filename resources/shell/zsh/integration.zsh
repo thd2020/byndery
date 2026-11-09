@@ -46,3 +46,7 @@ __byndery_preexec() {
 
 precmd_functions=(__byndery_status ${precmd_functions:#__byndery_*} __byndery_prompt_start)
 add-zsh-hook preexec __byndery_preexec
+
+# The file tree sends " cd <folder>" with a leading space when it syncs with
+# the terminal; this keeps those lines out of the history.
+setopt hist_ignore_space
