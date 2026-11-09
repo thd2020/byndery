@@ -29,7 +29,7 @@ node scripts/vendor-shell.mjs
 npm run dev
 ```
 
-The second command builds the shell environment in `vendor/`: MSYS2 with zsh and git, Powerlevel10k, gitstatusd and the usual zsh plugins, about 390 MB. In mainland China add `--mirror tuna` to download from the Tsinghua mirror. Without it, byndery falls back to Git Bash, then PowerShell.
+`npm install` also fetches MesloLGS NF, the Nerd Font the prompt is drawn for, into `src/renderer/src/assets/fonts`. The second command builds the shell environment in `vendor/`: MSYS2 with zsh and git, Powerlevel10k, gitstatusd and the usual zsh plugins, about 390 MB. In mainland China add `--mirror tuna` to download from the Tsinghua mirror. Without it, byndery falls back to Git Bash, then PowerShell.
 
 `npm run dev` opens the folder you start it in. Pass another folder as an argument, or use Ctrl+O.
 

@@ -19,7 +19,8 @@
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "node --test test/*.test.ts",
-    "e2e": "node test/e2e.mjs"
+    "e2e": "node test/e2e.mjs",
+    "postinstall": "node scripts/vendor-fonts.mjs"
   },
   "dependencies": {
     "@fontsource-variable/source-serif-4": "^5.3.1",

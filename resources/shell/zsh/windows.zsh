@@ -277,26 +277,38 @@ __byndery_route_line() {
 }
 zle -N accept-line __byndery_route_line
 
+# Display width of the prompt's last line, where the command line starts.
+# Works for any prompt: it is expanded the way zle drew it, then stripped of
+# escape sequences.
+__byndery_prompt_width() {
+  setopt local_options extended_glob
+  local p=${(%%)PS1}
+  p=${p//$'\e'\][^$'\a']#$'\a'/}
+  p=${p//$'\e'\[[0-9;?]#[A-Za-z]/}
+  p=${p##*$'\n'}
+  REPLY=${(m)#p}
+}
+
 # zle has already drawn the rewritten line; draw the typed one over it, with
-# PS or cmd in front when another system runs it.
+# PS or cmd in front when another system runs it. The prompt stays as drawn.
 __byndery_redraw_typed() {
-  local last=$?
   [[ -n $__byndery_typed && $1 == "$__byndery_ran" ]] || return 0
   local typed=$__byndery_typed ran=$__byndery_ran tag=$__byndery_tag
   __byndery_typed='' __byndery_ran=''
   # The command memory records the line as typed, not the routed form.
   typeset -g __byndery_display=$typed
-  # Only Powerlevel10k's prompt is known to end in a two-column "❯ ".
-  (( $+functions[p10k] )) || return 0
   # A typed prefix already says which system runs the line.
   [[ $typed == (zsh|pwsh|cmd):* ]] && tag=''
-  local cols=${COLUMNS:-80}
-  local rows=$(( (2 + ${#ran} + cols - 1) / cols ))
-  # Raw colour codes, not print -P: with prompt_subst on, -P would expand a
-  # typed $env:X as a zsh variable.
-  local mark=$'\e[32m'
-  (( last )) && mark=$'\e[31m'
-  print -nr -- $'\e['${rows}$'A\r\e[J'"${mark}❯"$'\e[0m '
+  __byndery_prompt_width
+  local width=$REPLY cols=${COLUMNS:-80}
+  local rows=$(( (width + ${(m)#ran} + cols - 1) / cols ))
+  (( rows < 1 )) && rows=1
+  # Up to where the line began, past the prompt, then clear what follows.
+  # Raw codes, not print -P: with prompt_subst on, -P would expand a typed
+  # $env:X as a zsh variable.
+  print -nr -- $'\e['${rows}$'A\r'
+  (( width )) && print -nr -- $'\e['${width}'C'
+  print -nr -- $'\e[J'
   [[ -n $tag ]] && print -nr -- $'\e[90m'"$tag"$'\e[0m '
   print -r -- "$typed"
 }

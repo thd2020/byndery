@@ -30,10 +30,14 @@ ZDOTDIR=$BYNDERY_USER_ZDOTDIR
       ;;
   esac
   source $BYNDERY_P10K/powerlevel10k.zsh-theme
+  # Rainbow by default; BYNDERY_PROMPT_STYLE=lean picks the plain two-line
+  # layout that needs no Nerd Font.
   if [[ -r $BYNDERY_USER_ZDOTDIR/.p10k.zsh ]]; then
     source $BYNDERY_USER_ZDOTDIR/.p10k.zsh
-  else
+  elif [[ ${BYNDERY_PROMPT_STYLE:-rainbow} == lean ]]; then
     source $BYNDERY_ZDOTDIR/p10k.zsh
+  else
+    source $BYNDERY_ZDOTDIR/p10k-rainbow.zsh
   fi
 }
 unset __byndery_prompt_before __byndery_user_zshrc

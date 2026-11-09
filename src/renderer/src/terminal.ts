@@ -41,7 +41,7 @@ function statCached(p: string): Promise<{ dir: boolean } | null> {
 }
 
 const monoFamily = (): string =>
-  getComputedStyle(document.documentElement).getPropertyValue('--font-mono').replace(/['"]/g, '').trim()
+  getComputedStyle(document.documentElement).getPropertyValue('--font-term').replace(/['"]/g, '').trim()
 
 const fontReady: Promise<unknown> = (() => {
   const first = monoFamily().split(',')[0].trim()

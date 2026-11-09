@@ -8,10 +8,45 @@
    keeps 12 to 13 px labels sturdy. Chinese falls back to the system's Song
    or Source Han Serif. */
 
+/* The terminal's face: MesloLGS NF, the Nerd Font Powerlevel10k is drawn
+   for. scripts/vendor-fonts.mjs fetches it on install. */
+@font-face {
+  font-family: 'MesloLGS NF';
+  src: url('./assets/fonts/MesloLGS-NF-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+
+@font-face {
+  font-family: 'MesloLGS NF';
+  src: url('./assets/fonts/MesloLGS-NF-Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: block;
+}
+
+@font-face {
+  font-family: 'MesloLGS NF';
+  src: url('./assets/fonts/MesloLGS-NF-Italic.ttf') format('truetype');
+  font-weight: 400;
+  font-style: italic;
+  font-display: block;
+}
+
+@font-face {
+  font-family: 'MesloLGS NF';
+  src: url('./assets/fonts/MesloLGS-NF-Bold-Italic.ttf') format('truetype');
+  font-weight: 700;
+  font-style: italic;
+  font-display: block;
+}
+
 :root {
   --font-ui: 'Source Serif 4 Variable', 'Source Han Serif SC', 'Noto Serif CJK SC', 'Songti SC', SimSun, ui-serif, Georgia, serif;
   --font-mono: 'Cascadia Mono', 'Cascadia Code', 'SF Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace;
   --font-prose: var(--font-ui);
+  --font-term: 'MesloLGS NF', var(--font-mono);
   --ui-size: 13px;
   --code-size: 13px;
   --row: 22px;

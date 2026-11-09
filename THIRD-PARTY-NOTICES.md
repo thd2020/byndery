@@ -21,6 +21,7 @@ The licence texts of the MSYS2 packages are in `usr/share/licenses/` inside the 
 | node-pty | MIT |
 | CodeMirror 6 and Lezer | MIT |
 | Source Serif 4 | SIL Open Font License 1.1 |
+| MesloLGS NF, Copyright 2009, 2010, 2013 André Berg, with Nerd Fonts glyphs, from <https://github.com/romkatv/powerlevel10k-media> | Apache License 2.0 |
 | Cascadia Mono, when installed by Windows | SIL Open Font License 1.1 (not bundled) |
 
 The names MSYS2, zsh, Powerlevel10k and the others belong to their projects. byndery uses them only to say what it includes.

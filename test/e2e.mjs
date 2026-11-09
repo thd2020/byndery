@@ -103,10 +103,11 @@ const typeInTerminal = async (text) => {
   await win.keyboard.press('Enter')
 }
 const promptCount = () => win.evaluate(() => window.__byndery.terms.active.marks.length)
-// The output of the last run of `cmd`, from its prompt line on. Routed lines
-// show a PS or cmd tag between the prompt mark and the command.
+// The output of the last run of `cmd`, from its prompt line on. The command
+// follows the rainbow prompt's ╰─ frame (or the lean prompt's ❯); routed lines
+// show a PS or cmd tag in between.
 const since = (text, cmd) =>
-  text.slice(Math.max(...['❯ ', '❯ PS ', '❯ cmd '].map((m) => text.lastIndexOf(m + cmd))))
+  text.slice(Math.max(...['╰─ ', '╰─ PS ', '╰─ cmd ', '❯ ', '❯ PS ', '❯ cmd '].map((m) => text.lastIndexOf(m + cmd))))
 const norm = (p) => p.replace(/\\/g, '/').replace(/^[a-z]:/, (d) => d.toUpperCase())
 
 await step('The default shell starts in the workspace with shell integration', async () => {
@@ -304,7 +305,7 @@ await step('One prompt runs zsh, PowerShell cmdlets, cmd built-ins and Windows p
   }
   await run("Get-Date -Format 'yyyy-MM' | Write-Output", /20\d\d-\d\d/)
   await run('ver', /Microsoft Windows/)
-  await run('whoami.exe', /whoami\.exe\n(?!zsh:)\S+/)
+  await run('whoami.exe', /whoami\.exe[ ─╯]*\n(?!zsh:)\S+/)
   await run('echo $ZSH_VERSION', /\d+\.\d+/)
 })
 
@@ -376,7 +377,9 @@ await step('Command history finds output, puts commands back and runs them', asy
   await win.keyboard.press('Control+K')
   assert.equal(await win.locator('.history-scope[aria-pressed="true"]').textContent(), 'This workspace')
   await win.keyboard.press('Tab')
-  await waitFor(async () => (await termText()).trimEnd().endsWith("echo 'error at app.ts:3:10 here'"), 'command on the prompt')
+  // The rainbow prompt closes its frame with ─╯ at the right of the input line.
+  const inputLine = async () => (await termText()).trimEnd().split('\n').pop().replace(/\s*─╯$/, '')
+  await waitFor(async () => (await inputLine()).endsWith("echo 'error at app.ts:3:10 here'"), 'command on the prompt')
   await win.keyboard.press('Control+U')
   // Enter runs it.
   const before = await promptCount()
