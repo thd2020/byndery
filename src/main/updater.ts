@@ -282,7 +282,7 @@ function installDownloadedUpdate(relaunch: boolean): boolean {
     rmSync(file, { force: true })
     if (relaunch) {
       app.relaunch({ execPath: destination, args: [] })
-      app.exit(0)
+      app.quit()
     }
     return true
   }
