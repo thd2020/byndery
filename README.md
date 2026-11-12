@@ -10,19 +10,25 @@ The name comes from a bindery, the workshop where loose sheets are sewn into one
 
 ## Recent changes
 
+- **2026-11-12.** The first release packages Windows x64 and ARM64, macOS Intel and Apple Silicon, and Linux x64 and ARM64 installers. Windows NSIS and Linux AppImage builds check for updates, verify SHA-256, and install updates when byndery closes; the other installer types link to the release page.
+- **2026-11-12.** Byndery can replace a PowerShell or Command Prompt window for your terminal work. Its shell profiles run with your signed-in account's permissions. This release does not register byndery as the host for console programs launched elsewhere; see [`docs/RELEASE.md`](docs/RELEASE.md).
 - **2026-11-09.** Settings is now a full window, organised the way Windows Terminal and Konsole organise theirs: profiles for every shell byndery finds, each inheriting from Profile defaults, a reset arrow on every changed value, editable key bindings, and `settings.json` that can be edited by hand. The Commands page sets the order in which zsh, PowerShell and cmd are asked, the prefixes, and names that always go to one system, and shows where a typed line would run.
 - **2026-11-09.** The prompt is Powerlevel10k's full rainbow style, drawn with MesloLGS NF, which `npm install` now fetches.
 - **2026-11-09.** The file tree can show any folder, through a path bar above it, and its sync button ties it to the terminal both ways.
 - **2026-11-09.** New keys: Ctrl+T and Ctrl+W open and close terminals, or files in the editor; Ctrl+K searches the command memory, and Ctrl+R is the shell's own search again; F1 opens the command list. Ctrl+Up and Ctrl+Down now outline the command they select. A terminal selection no longer disappears when another program copies it.
 - **2026-11-09.** Command memory: byndery keeps every command with its output, folder, exit code and time, and Ctrl+K searches all of it. Secrets are redacted before anything is stored, and Settings can switch it off or clear it.
-- **2026-11-09.** First working build: terminal, file tree and editor in one window. On Windows the terminal is zsh with Powerlevel10k, suggestions and syntax highlighting on a bundled MSYS2, and the same prompt also runs PowerShell cmdlets, cmd built-ins and paths written as `C:\` or `/c/`. The design and the reasons for it are in [`docs/design.md`](docs/design.md).
+- **2026-11-09.** First working build: terminal, file tree and editor in one window. On Windows x64 the terminal is zsh with Powerlevel10k, suggestions and syntax highlighting on a bundled MSYS2, and the same prompt also runs PowerShell cmdlets, cmd built-ins and paths written as `C:\` or `/c/`. The design and the reasons for it are in [`docs/design.md`](docs/design.md).
 
-## Running it
+## Downloads
 
-byndery runs from source for now; there is no installer yet. You need Node.js 22 or later and, on Windows, Git for Windows (its `tar` unpacks the bundled shell).
+[Download the latest installers from GitHub Releases](https://github.com/thd2020/byndery/releases/latest). The release includes Windows x64 and ARM64 Setup files, macOS Intel and Apple Silicon DMGs, and Linux AppImage, deb and rpm packages for x64 and ARM64.
+
+## Running from source
+
+You need Node.js 22 or later. On Windows, Git for Windows provides `tar` to unpack the bundled x64 shell.
 
 ```bash
-npm install
+npm ci
 ```
 
 ```bash
@@ -33,9 +39,11 @@ node scripts/vendor-shell.mjs
 npm run dev
 ```
 
-`npm install` also fetches MesloLGS NF, the Nerd Font the prompt is drawn for, into `src/renderer/src/assets/fonts`. The second command builds the shell environment in `vendor/`: MSYS2 with zsh and git, Powerlevel10k, gitstatusd and the usual zsh plugins, about 390 MB. In mainland China add `--mirror tuna` to download from the Tsinghua mirror. Without it, byndery falls back to Git Bash, then PowerShell.
+`npm ci` fetches MesloLGS NF, the Nerd Font the prompt is drawn for. The second command builds the shell resources in `vendor/`. Windows x64 gets MSYS2 with zsh and git; macOS and Linux use the system shell and bundle Powerlevel10k and its plugins. Windows ARM64 uses PowerShell and Command Prompt, plus Git Bash when installed. In mainland China add `--mirror tuna` to download MSYS2 from the Tsinghua mirror.
 
 `npm run dev` opens the folder you start it in. Pass another folder as an argument, or use Ctrl+O.
+
+Byndery is a terminal app you can use in place of a PowerShell or Command Prompt window. Its PowerShell and Command Prompt profiles run with the same permissions as the account that started byndery. This release does not register with Windows' console-host handoff, so console programs launched outside byndery still open in the host selected in Windows.
 
 ## Keys
 

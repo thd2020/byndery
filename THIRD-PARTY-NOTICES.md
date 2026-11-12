@@ -2,15 +2,17 @@
 
 byndery's own code is under the [MIT License](LICENSE). The app also ships the programs and libraries below, each under its own licence. The shell environment runs as separate programs that byndery starts; nothing in it is linked into byndery's code.
 
-## Shell environment (Windows builds)
+## Shell tools
+
+Windows x64 builds ship MSYS2 with zsh and git. macOS and Linux builds use the shell supplied by the operating system; Windows ARM64 builds use PowerShell and Command Prompt, plus Git Bash when installed. Powerlevel10k and its prompt tools are bundled with Windows x64, macOS and Linux builds.
 
 | Component | Licence | Source |
 |---|---|---|
-| MSYS2, about 130 packages including the msys2-runtime, bash, coreutils, zsh, git, OpenSSH and pacman | Per package; most are GPL-2.0 or GPL-3.0, zsh is under the Zsh licence | Each package and version is listed with its licence in `vendor/msys2-packages.txt` inside the app. Sources: <https://repo.msys2.org/msys/sources/> |
+| MSYS2, about 130 packages including the msys2-runtime, bash, coreutils, zsh, git, OpenSSH and pacman (Windows x64) | Per package; most are GPL-2.0 or GPL-3.0, zsh is under the Zsh licence | Each package and version is listed with its licence in `vendor/msys2-packages.txt` inside the app. Sources: <https://repo.msys2.org/msys/sources/> |
 | Powerlevel10k | MIT | <https://github.com/romkatv/powerlevel10k> |
 | gitstatusd | GPL-3.0 | <https://github.com/romkatv/gitstatus> |
 
-The licence texts of the MSYS2 packages are in `usr/share/licenses/` inside the bundled MSYS2. If a source link above stops working, ask [thd2020](https://github.com/thd2020) and you will be sent the corresponding source for the version you received, for three years after that release.
+The licence texts of the MSYS2 packages are in `usr/share/licenses/` inside the Windows x64 bundle. If a source link above stops working, ask [thd2020](https://github.com/thd2020) and you will be sent the corresponding source for the version you received, for three years after that release.
 
 ## Libraries and fonts
 

@@ -54,5 +54,6 @@ try {
   }
 } catch (e) {
   // Install still succeeds; the terminal falls back to the system's monospace font.
+  if (process.argv.includes('--strict')) throw e
   console.warn(`vendor-fonts: ${e.message}. Run "node scripts/vendor-fonts.mjs" again later.`)
 }

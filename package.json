@@ -1,6 +1,6 @@
 {
   "name": "byndery",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "description": "A terminal, file tree and editor in one window, built to sit beside terminal coding agents.",
   "main": "out/main/index.js",
   "author": {
@@ -18,6 +18,10 @@
     "build": "electron-vite build",
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json",
+    "package:assets": "node scripts/create-icons.mjs && node scripts/vendor-fonts.mjs --strict && node scripts/vendor-shell.mjs",
+    "package:win": "npm run package:assets && npm run build && electron-builder --win --publish never",
+    "package:mac": "npm run package:assets && npm run build && electron-builder --mac --publish never",
+    "package:linux": "npm run package:assets && npm run build && electron-builder --linux --publish never",
     "test": "node --test test/*.test.ts",
     "e2e": "node test/e2e.mjs",
     "postinstall": "node scripts/vendor-fonts.mjs"
@@ -46,6 +50,7 @@
     "@xterm/xterm": "^6.0.0",
     "codemirror": "^6.0.2",
     "electron": "^45.2.3",
+    "electron-builder": "^26.18.0",
     "electron-vite": "^6.0.0",
     "playwright-core": "^1.65.0",
     "typescript": "^5.9.3",

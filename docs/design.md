@@ -1,5 +1,7 @@
 # byndery design route
 
+2026-11-12: Release installers bundle the Electron app and its native terminal dependency for Windows x64 and ARM64, macOS Intel and Apple Silicon, and Linux x64 and ARM64. Windows x64 also bundles MSYS2; other targets use the shells provided by their operating system. Byndery can host PowerShell and Command Prompt with the signed-in user's permissions; console handoff from programs launched outside byndery is not part of this release.
+
 Written 2026-11-09, when the first build of the terminal, the file tree and the editor landed, and updated the same day for keys, folder sync, the prompt and settings. [`landscape.md`](landscape.md) has the market scan this builds on; this memo says what we took from it, what we decided against, and what the first build contains.
 
 ![Screenshot of byndery in light mode with the file tree on the left, a zsh terminal with the rainbow prompt in the middle and a TypeScript file in the editor on the right](design.assets/overview-light.png)
@@ -86,7 +88,7 @@ The sync button ties the tree and the active terminal together. It copies Dolphi
 
 ## The shell on Windows
 
-byndery's default shell is zsh with Powerlevel10k in its full rainbow style, running on an MSYS2 that ships inside the app. You do not install MSYS2, zsh or the prompt; they are part of byndery. If the bundle is missing, byndery uses a system MSYS2 with zsh, then Git Bash with a Powerlevel10k-style bash prompt, then PowerShell.
+On Windows x64, byndery's default shell is zsh with Powerlevel10k in its full rainbow style, running on the MSYS2 bundle. Windows ARM64 uses native PowerShell and Command Prompt profiles, plus Git Bash when installed. macOS and Linux use the system shell; zsh gets the bundled Powerlevel10k prompt when it is available. On Windows x64, if the bundle is missing, byndery uses a system MSYS2 with zsh, then Git Bash, then PowerShell.
 
 ![Screenshot of the rainbow Powerlevel10k prompt in byndery: Windows icon, folder and git segments with solid arrow heads, and a frame joining the two prompt lines](design.assets/prompt.png)
 
@@ -94,7 +96,7 @@ byndery's default shell is zsh with Powerlevel10k in its full rainbow style, run
 
 The prompt is Powerlevel10k's own rainbow template, as its configuration wizard writes it for two lines, a full frame, sharp heads and many icons, with the OS icon on. byndery changes three things on top: the template's eight theme colours become fixed 256-colour ones, because a light theme darkens those colours for text and black on a darkened yellow is unreadable; the git segment stays empty until gitstatus answers, instead of showing "loading"; and the icons use the Nerd Fonts v3 code points of MesloLGS NF, the font Powerlevel10k recommends, which `npm install` fetches with pinned hashes. The lean layout stays available as a profile setting, and a `~/.p10k.zsh` of your own replaces both.
 
-The bundled MSYS2 starts in its UCRT64 environment, inherits the Windows PATH so `node`, `claude` and `codex` work, mounts `/tmp` on your Windows temp folder, and uses your Windows profile folder as `~`, so `~/.ssh`, `~/.gitconfig` and `~/.zshrc` are the ones every other tool uses. Your own `.zshrc` runs first; byndery adds its hooks afterwards and applies its prompt only if you have not chosen one.
+The Windows x64 MSYS2 bundle starts in its UCRT64 environment, inherits the Windows PATH so `node`, `claude` and `codex` work, mounts `/tmp` on your Windows temp folder, and uses your Windows profile folder as `~`, so `~/.ssh`, `~/.gitconfig` and `~/.zshrc` are the ones every other tool uses. Your own `.zshrc` runs first; byndery adds its hooks afterwards and applies its prompt only if you have not chosen one.
 
 The plugins most people add by hand come with it: zsh-autosuggestions (grey suggestions from history), zsh-syntax-highlighting, zsh-completions, zsh-history-substring-search on the arrow keys, and Oh My Zsh's git aliases. Each is skipped when your own config already loads it. Under MSYS2 every new process costs tens of milliseconds, so suggestions run synchronously and from history only; with all plugins loaded a typed character reaches the screen in 1.3 ms on the build machine, against 25 ms with the plugins' default settings.
 

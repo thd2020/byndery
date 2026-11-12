@@ -4,6 +4,9 @@ WORKLOG.md
 *.pfx
 .env
 .env.*
+.*-seed-imported
+packaging/icon.ico
+packaging/icon.icns
 node_modules/
 out/
 dist/

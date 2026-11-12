@@ -1,6 +1,6 @@
-// Builds the shell environment byndery ships on Windows: MSYS2 with zsh and
-// git, Powerlevel10k, and the gitstatus binary Powerlevel10k uses. The result
-// lands in vendor/ and is packaged as the app's own terminal environment.
+// Builds the shell environment byndery ships: MSYS2 with zsh and git on
+// Windows x64, plus Powerlevel10k and its plugins where a system zsh is used.
+// The result lands in vendor/ and is packaged with the app.
 //
 //   node scripts/vendor-shell.mjs [--mirror tuna|ustc|official] [--force]
 //
@@ -247,8 +247,12 @@ const archiveStep = async () => {
   writePackageList()
 }
 
-await archiveStep()
-const p10k = fetchP10k()
-fetchGitstatus(p10k)
-await fetchPlugins()
+if (process.platform === 'win32' && process.arch !== 'x64') {
+  log('Windows ARM64 uses its native PowerShell and Command Prompt profiles; the MSYS2 bundle is x64-only')
+} else {
+  await archiveStep()
+  const p10k = fetchP10k()
+  fetchGitstatus(p10k)
+  await fetchPlugins()
+}
 log('done')
