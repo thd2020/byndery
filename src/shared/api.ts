@@ -50,6 +50,20 @@ export interface ReadResult {
   mtime: number
 }
 
+export interface UpdateState {
+  currentVersion: string
+  availableVersion: string | null
+  releasePage: string | null
+  status: 'idle' | 'checking' | 'downloading' | 'ready' | 'error'
+  progress: number
+  canCheck: boolean
+  supportsAutoUpdate: boolean
+  installSupported: boolean
+  canInstall: boolean
+  autoEnabled: boolean
+  error: string | null
+}
+
 export interface Bridge {
   platform: NodeJS.Platform
   win: {
@@ -118,6 +132,13 @@ export interface Bridge {
     onChange(cb: (s: SettingsState) => void): void
     /** Which system the byndery prompt would run a line in, and the rule behind it. */
     explain(line: string): Promise<{ system: string; reason: string } | null>
+  }
+  updates: {
+    get(): Promise<UpdateState>
+    check(): Promise<UpdateState>
+    setEnabled(enabled: boolean): Promise<UpdateState>
+    install(): Promise<UpdateState>
+    onChange(cb: (state: UpdateState) => void): void
   }
   menu(items: MenuItem[]): Promise<string | null>
   /** Native message box; resolves to the index of the button pressed. */

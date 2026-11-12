@@ -9,6 +9,7 @@ import * as files from './files'
 import * as git from './git'
 import * as settings from './settings'
 import * as history from './history'
+import { checkForUpdates, getUpdateState, installPendingOnQuit, installUpdateNow, setAutoUpdatesEnabled, startUpdater } from './updater'
 import { normalize } from '../shared/paths'
 
 // Window state and the last workspace live in Electron's userData folder,
@@ -210,6 +211,10 @@ function registerIpc(): void {
   ipcMain.handle('settings:set', (_e, path: string[], value: unknown) => settings.set(path, value))
   ipcMain.handle('settings:reset', (_e, path: string[]) => settings.reset(path))
   ipcMain.handle('settings:explain', (_e, line: string) => explainRoute(shellDirs(), line))
+  ipcMain.handle('updates:get', () => getUpdateState())
+  ipcMain.handle('updates:check', () => checkForUpdates())
+  ipcMain.handle('updates:setEnabled', (_e, enabled: boolean) => setAutoUpdatesEnabled(enabled))
+  ipcMain.handle('updates:install', () => installUpdateNow())
 
   ipcMain.handle('git:status', (_e, root: string) => git.status(root))
   ipcMain.handle('git:show', (_e, p: string) => git.show(p))
@@ -275,6 +280,7 @@ app.whenReady().then(() => {
   )
   registerIpc()
   createWindow()
+  startUpdater()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
@@ -284,3 +290,5 @@ app.on('window-all-closed', () => {
   term.killAll()
   if (process.platform !== 'darwin') app.quit()
 })
+
+app.on('before-quit', installPendingOnQuit)

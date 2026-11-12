@@ -65,6 +65,13 @@ const bridge: Bridge = {
     onChange: (cb) => void ipcRenderer.on('settings:changed', (_e, s) => cb(s)),
     explain: (line) => ipcRenderer.invoke('settings:explain', line)
   },
+  updates: {
+    get: () => ipcRenderer.invoke('updates:get'),
+    check: () => ipcRenderer.invoke('updates:check'),
+    setEnabled: (enabled) => ipcRenderer.invoke('updates:setEnabled', enabled),
+    install: () => ipcRenderer.invoke('updates:install'),
+    onChange: (cb) => void ipcRenderer.on('updates:changed', (_e, s) => cb(s))
+  },
   menu: (items) => ipcRenderer.invoke('menu:popup', items),
   confirm: (m, d, b) => ipcRenderer.invoke('dialog:confirm', m, d, b),
   devtools: () => ipcRenderer.send('win:devtools')

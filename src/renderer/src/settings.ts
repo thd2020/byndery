@@ -7,6 +7,7 @@ import {
   type SystemId,
   type TerminalSettings
 } from '../../shared/settings'
+import type { UpdateState } from '../../shared/api'
 import { api, Emitter, h } from './bridge'
 import { chordOf, keyLabel, normalizeChord, type Keymap } from './keymap'
 import { SCHEMES } from './theme'
@@ -115,6 +116,7 @@ export class SettingsSheet {
   private nav = h('nav', 'settings-nav')
   private body = h('div', 'settings-body')
   private state: SettingsState | null = null
+  private updateState: UpdateState | null = null
   private page = 'general'
   private restoreFocus: HTMLElement | null = null
   private recording: string | null = null
@@ -152,6 +154,10 @@ export class SettingsSheet {
       this.state = s
       if (this.isOpen) this.render()
     })
+    api.updates.onChange((s) => {
+      this.updateState = s
+      if (this.isOpen && this.page === 'updates') this.render()
+    })
   }
 
   get isOpen(): boolean {
@@ -160,7 +166,9 @@ export class SettingsSheet {
 
   async open(page?: string): Promise<void> {
     if (!this.isOpen) this.restoreFocus = document.activeElement as HTMLElement | null
-    this.state = await api.settings.get()
+    const [settings, updates] = await Promise.all([api.settings.get(), api.updates.get()])
+    this.state = settings
+    this.updateState = updates
     if (page) this.page = page
     this.el.hidden = false
     this.render()
@@ -183,7 +191,7 @@ export class SettingsSheet {
 
   private pages(): Page[] {
     const s = this.state!
-    const pages: Page[] = [{ id: 'general', label: 'General' }, { id: 'defaults', label: 'Profile defaults' }]
+    const pages: Page[] = [{ id: 'general', label: 'General' }, { id: 'updates', label: 'Updates' }, { id: 'defaults', label: 'Profile defaults' }]
     for (const p of s.profiles) pages.push({ id: `profile:${p.id}`, label: p.name, indent: true })
     if (s.profiles.some((p) => p.routes)) pages.push({ id: 'commands', label: 'Commands' })
     pages.push({ id: 'files', label: 'Files' }, { id: 'editor', label: 'Editor' }, { id: 'keys', label: 'Keyboard' }, { id: 'history', label: 'Command history' })
@@ -235,6 +243,7 @@ export class SettingsSheet {
     }
     const page = this.page
     if (page === 'general') this.renderGeneral()
+    else if (page === 'updates') this.renderUpdates()
     else if (page === 'defaults') this.renderDefaults()
     else if (page.startsWith('profile:')) this.renderProfile(page.slice(8))
     else if (page === 'commands') this.renderCommands()
@@ -374,6 +383,56 @@ export class SettingsSheet {
       choices: [['', visible[0] ? `${visible[0].name} (first in the list)` : 'First in the list'], ...visible.map((p): Choice => [p.id, p.name])]
     })
     this.field(g, { label: 'Ask before closing a terminal that is running a command', path: ['general', 'confirmClose'], control: 'toggle' })
+  }
+
+  private renderUpdates(): void {
+    const u = this.updateState
+    this.heading('Updates')
+    const g = this.group()
+
+    if (u?.supportsAutoUpdate) {
+      const row = h('div', 'settings-row')
+      row.style.gridTemplateColumns = 'minmax(0, 1fr) auto'
+      const text = h('div', 'settings-label')
+      const label = h('label', '', 'Automatically install updates')
+      label.htmlFor = 'auto-updates'
+      text.append(label, h('div', 'settings-hint', 'Download updates in the background and install them when you close byndery.'))
+      const toggle = h('input', 'switch')
+      toggle.type = 'checkbox'
+      toggle.id = 'auto-updates'
+      toggle.checked = u.autoEnabled
+      toggle.addEventListener('change', () => void api.updates.setEnabled(toggle.checked))
+      row.append(text, wrap(toggle))
+      g.append(row)
+    } else if (u?.canCheck) {
+      g.append(h('div', 'settings-hint group-hint', 'This installer needs manual updates.'))
+    } else {
+      g.append(h('div', 'settings-hint group-hint', 'Update checks are available in the installed app.'))
+    }
+
+    if (u) {
+      let status = `byndery ${u.currentVersion}.`
+      if (u.status === 'checking') status = 'Checking for updates…'
+      else if (u.status === 'downloading') status = `Downloading version ${u.availableVersion ?? ''}: ${Math.round(u.progress * 100)}%.`
+      else if (u.status === 'ready') status = u.autoEnabled ? `Version ${u.availableVersion} will install when you close byndery.` : `Version ${u.availableVersion} is ready to install.`
+      else if (u.status === 'error') status = `Update failed: ${u.error ?? 'Unknown error.'}`
+      else if (u.availableVersion) status = `Version ${u.availableVersion} is available.`
+      g.append(h('div', u.status === 'error' ? 'settings-hint warn' : 'settings-hint group-hint', status))
+
+      const actions = h('div', 'settings-actions')
+      const check = h('button', 'text-btn', 'Check for updates')
+      check.disabled = !u.canCheck || u.status === 'checking' || u.status === 'downloading'
+      check.addEventListener('click', () => void api.updates.check())
+      actions.append(check)
+
+      if (u.availableVersion && u.releasePage) {
+        const action = h('button', 'text-btn', u.installSupported ? (u.canInstall ? 'Install now' : 'Download and install') : 'Open release page')
+        action.disabled = u.status === 'checking' || u.status === 'downloading'
+        action.addEventListener('click', () => void api.updates.install())
+        actions.append(action)
+      }
+      g.append(actions)
+    }
   }
 
   private renderDefaults(): void {
