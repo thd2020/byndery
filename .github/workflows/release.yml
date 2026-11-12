@@ -115,7 +115,7 @@ jobs:
           $files = node scripts/write-checksums.mjs | ConvertFrom-Json
           gh release upload $env:TAG $files --clobber
       - name: Attest installers
-        uses: actions/attest@1e69f48acb82b1966a394da916b4c1698aa569d6 # v4
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
         with:
           subject-path: ${{ matrix.attest }}
 
