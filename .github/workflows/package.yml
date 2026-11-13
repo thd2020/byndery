@@ -1,0 +1,131 @@
+# Builds the installers on native runners for all six platform and architecture
+# pairs. Called by ci.yml (pull requests: build and keep the files as workflow
+# artifacts) and by release.yml (upload to a GitHub Release when `tag` is set).
+# Permissions come from the caller: release.yml grants contents, id-token and
+# attestations write; ci.yml grants read and pull-requests write.
+name: package
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: Release to upload the installers to; empty keeps them as workflow artifacts
+        required: false
+        type: string
+        default: ''
+
+jobs:
+  build:
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            target: --win --x64
+            label: windows-x64
+            attest: dist/*.exe
+          - runner: windows-11-arm
+            target: --win --arm64
+            label: windows-arm64
+            attest: dist/*.exe
+          - runner: macos-15-intel
+            target: --mac --x64
+            label: macos-x64
+            attest: dist/*.dmg
+          - runner: macos-latest
+            target: --mac --arm64
+            label: macos-arm64
+            attest: dist/*.dmg
+          - runner: ubuntu-22.04
+            target: --linux --x64
+            label: linux-x64
+            attest: |
+              dist/*.AppImage
+              dist/*.deb
+              dist/*.rpm
+          - runner: ubuntu-22.04-arm
+            target: --linux --arm64
+            label: linux-arm64
+            attest: |
+              dist/*.AppImage
+              dist/*.deb
+              dist/*.rpm
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Install Linux packaging tools
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libatspi2.0-dev libglib2.0-dev libwayland-dev fakeroot dpkg rpm squashfs-tools
+      # One step, so a failure leaves one log for the pull request comment below.
+      - name: Install, prepare resources, build and package
+        shell: bash
+        run: |
+          set -o pipefail
+          {
+            npm ci
+            npm run package:assets
+            npm run build
+            npx electron-builder ${{ matrix.target }} --publish never
+          } 2>&1 | tee "$RUNNER_TEMP/package.log"
+      - name: Check the Windows console handoff is packaged
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          shopt -s nullglob
+          helpers=(dist/win*-unpacked/resources/handoff/byndery-handoff.exe)
+          if [ ${#helpers[@]} -ne 1 ]; then
+            echo "::error::byndery-handoff.exe is missing from the package" | tee -a "$RUNNER_TEMP/package.log"
+            exit 1
+          fi
+          "${helpers[0]}" --status | tee -a "$RUNNER_TEMP/package.log"
+      - name: Write SHA-256 files and upload installers
+        if: inputs.tag != ''
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          $files = node scripts/write-checksums.mjs | ConvertFrom-Json
+          gh release upload $env:TAG $files --clobber
+          if ($LASTEXITCODE -ne 0) { throw "Upload to $env:TAG failed" }
+      - name: Attest installers
+        if: inputs.tag != ''
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: ${{ matrix.attest }}
+      - name: Keep the installers for testing
+        if: inputs.tag == ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: byndery-${{ matrix.label }}
+          path: |
+            dist/*.exe
+            dist/*.dmg
+            dist/*.AppImage
+            dist/*.deb
+            dist/*.rpm
+          retention-days: 7
+          if-no-files-found: error
+      # Job logs need a sign-in to read; the end of the log on the pull request does not.
+      - name: Post the end of the log to the pull request
+        if: failure() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          {
+            echo "### ${{ matrix.label }} packaging failed"
+            echo
+            echo '```'
+            tail -n 80 "$RUNNER_TEMP/package.log" 2>/dev/null | cut -c1-300 || echo "(no log)"
+            echo '```'
+          } > "$RUNNER_TEMP/comment.md"
+          gh pr comment "$PR" --repo "${{ github.repository }}" --body-file "$RUNNER_TEMP/comment.md"

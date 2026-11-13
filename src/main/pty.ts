@@ -12,15 +12,29 @@ const BATCH_MS = 5
 const HIGH_WATER = 512 * 1024
 const LOW_WATER = 64 * 1024
 
+/** What a session needs from the process behind it: a node-pty child, or a console Windows handed to byndery. */
+export interface TermProcess {
+  write(data: string): void
+  resize(cols: number, rows: number): void
+  kill(): void
+  pause(): void
+  resume(): void
+  onData(cb: (data: string) => void): void
+  onExit(cb: (e: { exitCode: number }) => void): void
+}
+
 interface Session {
   id: number
-  proc: pty.IPty
-  owner: WebContents
+  proc: TermProcess
+  /** The window showing it; null for a handed-over console no window has attached to yet. */
+  owner: WebContents | null
   pending: string
   timer: NodeJS.Timeout | null
   unacked: number
   paused: boolean
   info: TermInfo
+  /** Set when the process exited before a window attached. */
+  exitCode?: number
 }
 
 const sessions = new Map<number, Session>()
@@ -28,7 +42,6 @@ let conptyDllWorks = true
 let nextId = 1
 
 export function createTerminal(owner: WebContents, shell: ShellSpec, cwd: string, cols: number, rows: number, profile: { id: string; name: string }): TermInfo {
-  const id = nextId++
   const env: Record<string, string> = { ...(process.env as Record<string, string>), ...shell.env }
   env.TERM_PROGRAM = 'byndery'
   env.COLORTERM = 'truecolor'
@@ -36,7 +49,39 @@ export function createTerminal(owner: WebContents, shell: ShellSpec, cwd: string
   for (const k of Object.keys(env)) if (env[k] === '') delete env[k]
 
   const proc = spawn(shell, cwd, cols, rows, env)
-  const info: TermInfo = { id, shell: shell.name, profile: profile.id, profileName: profile.name, cwd, integrated: shell.integrated, msys: shell.msys }
+  const s = register(proc, owner, { shell: shell.name, profile: profile.id, profileName: profile.name, cwd, integrated: shell.integrated, msys: shell.msys })
+  return s.info
+}
+
+/**
+ * A process that is already running, such as a console Windows handed over.
+ * Its output waits until a window attaches with `attachTerminal`.
+ */
+export function adoptTerminal(proc: TermProcess, info: Omit<TermInfo, 'id'>): number {
+  return register(proc, null, info).id
+}
+
+/** Shows an adopted session in a window: sizes it, delivers what it printed so far and any exit. */
+export function attachTerminal(owner: WebContents, id: number, cols: number, rows: number): TermInfo | null {
+  const s = sessions.get(id)
+  if (!s || s.owner) return null
+  s.owner = owner
+  owner.once('destroyed', () => kill(id))
+  resize(id, cols, rows)
+  // After the renderer has the info and has registered the id.
+  setTimeout(() => {
+    flush(s)
+    if (s.exitCode !== undefined) {
+      sessions.delete(id)
+      if (!owner.isDestroyed()) owner.send('term:exit', id, s.exitCode)
+    }
+  }, 0)
+  return s.info
+}
+
+function register(proc: TermProcess, owner: WebContents | null, rest: Omit<TermInfo, 'id'>): Session {
+  const id = nextId++
+  const info: TermInfo = { id, ...rest }
   const s: Session = { id, proc, owner, pending: '', timer: null, unacked: 0, paused: false, info }
   sessions.set(id, s)
 
@@ -51,11 +96,16 @@ export function createTerminal(owner: WebContents, shell: ShellSpec, cwd: string
   })
   proc.onExit(({ exitCode }) => {
     flush(s)
+    if (!s.owner) {
+      // Kept until a window attaches, so the tab can show how it ended.
+      if (sessions.has(id)) s.exitCode = exitCode
+      return
+    }
     sessions.delete(id)
-    if (!owner.isDestroyed()) owner.send('term:exit', id, exitCode)
+    if (!s.owner.isDestroyed()) s.owner.send('term:exit', id, exitCode)
   })
-  owner.once('destroyed', () => kill(id))
-  return info
+  owner?.once('destroyed', () => kill(id))
+  return s
 }
 
 function spawn(shell: ShellSpec, cwd: string, cols: number, rows: number, env: Record<string, string>): pty.IPty {
@@ -81,7 +131,7 @@ export function windowsBuild(): number | undefined {
 function flush(s: Session): void {
   if (s.timer) clearTimeout(s.timer)
   s.timer = null
-  if (!s.pending || s.owner.isDestroyed()) return
+  if (!s.pending || !s.owner || s.owner.isDestroyed()) return
   s.owner.send('term:data', s.id, s.pending)
   s.pending = ''
 }

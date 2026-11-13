@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { Bridge } from '../shared/api'
 
-const sys = ipcRenderer.sendSync('sys:info') as { windowsBuild?: number; home: string }
+const sys = ipcRenderer.sendSync('sys:info') as { windowsBuild?: number; home: string; handoff: boolean }
 
 const bridge: Bridge = {
   platform: process.platform,
@@ -25,7 +25,10 @@ const bridge: Bridge = {
     resize: (id, c, r) => ipcRenderer.send('term:resize', id, c, r),
     kill: (id) => ipcRenderer.send('term:kill', id),
     onData: (cb) => void ipcRenderer.on('term:data', (_e, id: number, d: string) => cb(id, d)),
-    onExit: (cb) => void ipcRenderer.on('term:exit', (_e, id: number, code: number) => cb(id, code))
+    onExit: (cb) => void ipcRenderer.on('term:exit', (_e, id: number, code: number) => cb(id, code)),
+    attach: (id, c, r) => ipcRenderer.invoke('term:attach', id, c, r),
+    handoffs: () => ipcRenderer.invoke('term:handoffs'),
+    onHandoff: (cb) => void ipcRenderer.on('term:handoff', (_e, id: number) => cb(id))
   },
   fs: {
     list: (d) => ipcRenderer.invoke('fs:list', d),
@@ -71,6 +74,10 @@ const bridge: Bridge = {
     setEnabled: (enabled) => ipcRenderer.invoke('updates:setEnabled', enabled),
     install: () => ipcRenderer.invoke('updates:install'),
     onChange: (cb) => void ipcRenderer.on('updates:changed', (_e, s) => cb(s))
+  },
+  defaultTerminal: {
+    get: () => ipcRenderer.invoke('defterm:get'),
+    set: (enabled) => ipcRenderer.invoke('defterm:set', enabled)
   },
   menu: (items) => ipcRenderer.invoke('menu:popup', items),
   confirm: (m, d, b) => ipcRenderer.invoke('dialog:confirm', m, d, b),

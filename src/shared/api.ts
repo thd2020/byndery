@@ -14,6 +14,8 @@ export interface TermInfo {
   cwd: string
   integrated: boolean
   msys?: MsysMounts
+  /** Shown on the tab instead of the folder: set for a console Windows handed to byndery. */
+  title?: string
 }
 
 export interface DirEntry {
@@ -64,6 +66,18 @@ export interface UpdateState {
   error: string | null
 }
 
+/** byndery as the host for console programs started outside it (Windows 11). */
+export interface DefaultTerminalState {
+  /** This build includes byndery-handoff.exe. */
+  available: boolean
+  /** Windows 11 22H2 or later. */
+  supported: boolean
+  enabled: boolean
+  /** Windows Terminal, which provides the console server and the COM proxy, is installed. */
+  terminalProxy: boolean
+  error: string | null
+}
+
 export interface Bridge {
   platform: NodeJS.Platform
   win: {
@@ -88,6 +102,12 @@ export interface Bridge {
     kill(id: number): void
     onData(cb: (id: number, data: string) => void): void
     onExit(cb: (id: number, code: number) => void): void
+    /** Shows a handed-over console in this window; null when it is gone or already shown. */
+    attach(id: number, cols: number, rows: number): Promise<TermInfo | null>
+    /** Says this window can take consoles, and returns the ones waiting for a window. */
+    handoffs(): Promise<number[]>
+    /** A console Windows handed to byndery, for this window to attach. */
+    onHandoff(cb: (id: number) => void): void
   }
   fs: {
     list(dir: string): Promise<DirEntry[]>
@@ -140,11 +160,16 @@ export interface Bridge {
     install(): Promise<UpdateState>
     onChange(cb: (state: UpdateState) => void): void
   }
+  defaultTerminal: {
+    get(): Promise<DefaultTerminalState>
+    set(enabled: boolean): Promise<DefaultTerminalState>
+  }
   menu(items: MenuItem[]): Promise<string | null>
   /** Native message box; resolves to the index of the button pressed. */
   confirm(message: string, detail: string, buttons: string[]): Promise<number>
   devtools(): void
-  sys: { windowsBuild?: number; home: string }
+  /** handoff: Windows started this copy to show a console (byndery-handoff.exe passes --handoff). */
+  sys: { windowsBuild?: number; home: string; handoff: boolean }
 }
 
 export interface MenuItem {

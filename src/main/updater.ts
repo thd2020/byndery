@@ -98,7 +98,9 @@ function compareVersions(a: string, b: string): number {
 
 function assetName(version: string, build: UpdateTarget): string {
   const ext = build.kind === 'appimage' ? 'AppImage' : build.os === 'win' ? 'exe' : 'dmg'
-  return `byndery-${version}-${build.os}-${build.arch}.${ext}`
+  // electron-builder names AppImages by the Linux arch: x86_64, arm64.
+  const arch = build.kind === 'appimage' && build.arch === 'x64' ? 'x86_64' : build.arch
+  return `byndery-${version}-${build.os}-${arch}.${ext}`
 }
 
 function latestPageRedirect(): Promise<string | null> {
@@ -264,7 +266,8 @@ function installDownloadedUpdate(relaunch: boolean): boolean {
   installerPath = null
   const build = target()
   if (build.kind === 'nsis') {
-    const child = spawn(file, ['/S'], { detached: true, stdio: 'ignore' })
+    // /S keeps the install folder and shortcuts; --force-run opens byndery again afterwards.
+    const child = spawn(file, ['/S', ...(relaunch ? ['--force-run'] : [])], { detached: true, stdio: 'ignore' })
     child.once('error', (error) => {
       state = { ...state, status: 'error', error: error.message }
       emit()

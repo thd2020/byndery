@@ -509,10 +509,21 @@ window.addEventListener('beforeunload', () => {
   for (const v of terms.views) v.dispose()
 })
 
+// Consoles Windows hands to byndery when it is the default terminal open as tabs here.
+api.term.onHandoff((id) => terms.adopt(id))
+// A window Windows opened for a console closes with its last tab, as a console window does.
+terms.activeChanged.on((t) => {
+  if (!t && api.sys.handoff && terms.views.length === 0) api.win.close()
+})
+
 void (async () => {
   applySettings(await api.settings.get())
   await setWorkspace(await api.workspace.initial())
-  terms.create(root)
+  const handed = await api.term.handoffs()
+  for (const id of handed) terms.adopt(id)
+  // Started for a console: that console is the only tab.
+  if (!handed.length && !api.sys.handoff) terms.create(root)
+  else if (!handed.length) setTimeout(() => terms.views.length || terms.create(root), 15_000)
 })()
 
 // Handles for the end-to-end tests and for poking at the app from DevTools.

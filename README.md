@@ -10,8 +10,9 @@ The name comes from a bindery, the workshop where loose sheets are sewn into one
 
 ## Recent changes
 
+- **2026-11-13.** byndery can be the default terminal on Windows 11 22H2 and later. PowerShell, Command Prompt and other console programs started from Start, Explorer or Run open as byndery tabs instead of console windows. The installer offers it on its last page, Settings → General turns it on or off, and uninstalling gives the choice back to the terminal chosen before.
 - **2026-11-12.** The first release packages Windows x64 and ARM64, macOS Intel and Apple Silicon, and Linux x64 and ARM64 installers. Windows NSIS and Linux AppImage builds check for updates, verify SHA-256, and install updates when byndery closes; the other installer types link to the release page.
-- **2026-11-12.** Byndery can replace a PowerShell or Command Prompt window for your terminal work. Its shell profiles run with your signed-in account's permissions. This release does not register byndery as the host for console programs launched elsewhere; see [`docs/RELEASE.md`](docs/RELEASE.md).
+- **2026-11-12.** Byndery can replace a PowerShell or Command Prompt window for your terminal work. Its shell profiles run with your signed-in account's permissions.
 - **2026-11-09.** Settings is now a full window, organised the way Windows Terminal and Konsole organise theirs: profiles for every shell byndery finds, each inheriting from Profile defaults, a reset arrow on every changed value, editable key bindings, and `settings.json` that can be edited by hand. The Commands page sets the order in which zsh, PowerShell and cmd are asked, the prefixes, and names that always go to one system, and shows where a typed line would run.
 - **2026-11-09.** The prompt is Powerlevel10k's full rainbow style, drawn with MesloLGS NF, which `npm install` now fetches.
 - **2026-11-09.** The file tree can show any folder, through a path bar above it, and its sync button ties it to the terminal both ways.
@@ -43,7 +44,9 @@ npm run dev
 
 `npm run dev` opens the folder you start it in. Pass another folder as an argument, or use Ctrl+O.
 
-Byndery is a terminal app you can use in place of a PowerShell or Command Prompt window. Its PowerShell and Command Prompt profiles run with the same permissions as the account that started byndery. This release does not register with Windows' console-host handoff, so console programs launched outside byndery still open in the host selected in Windows.
+Byndery is a terminal app you can use in place of a PowerShell or Command Prompt window. Its PowerShell and Command Prompt profiles run with the same permissions as the account that started byndery.
+
+On Windows 11 22H2 and later byndery can also be the default terminal, the way Windows Terminal can: console programs started outside byndery, such as PowerShell from the Start menu, a `.bat` file double-clicked in Explorer or `cmd` from Run, open as byndery tabs. The installer's last page offers it, and Settings → General → Default terminal turns it on or off. Windows hands the console over through Windows Terminal's console host, which Windows 11 includes; [`docs/RELEASE.md`](docs/RELEASE.md) explains how.
 
 ## Keys
 

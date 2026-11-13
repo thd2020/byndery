@@ -21,6 +21,7 @@ The licence texts of the MSYS2 packages are in `usr/share/licenses/` inside the 
 | Electron and Chromium | MIT, with Chromium's notices in `LICENSES.chromium.html` |
 | xterm.js and its addons | MIT |
 | node-pty | MIT |
+| The console handoff interfaces (`ITerminalHandoff`, `TERMINAL_STARTUP_INFO`) in `byndery-handoff.exe`, from Windows Terminal's `ITerminalHandoff.idl`, <https://github.com/microsoft/terminal> | MIT |
 | CodeMirror 6 and Lezer | MIT |
 | Source Serif 4 | SIL Open Font License 1.1 |
 | MesloLGS NF, Copyright 2009, 2010, 2013 André Berg, with Nerd Fonts glyphs, from <https://github.com/romkatv/powerlevel10k-media> | Apache License 2.0 |

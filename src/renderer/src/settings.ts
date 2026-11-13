@@ -7,7 +7,7 @@ import {
   type SystemId,
   type TerminalSettings
 } from '../../shared/settings'
-import type { UpdateState } from '../../shared/api'
+import type { DefaultTerminalState, UpdateState } from '../../shared/api'
 import { api, Emitter, h } from './bridge'
 import { chordOf, keyLabel, normalizeChord, type Keymap } from './keymap'
 import { SCHEMES } from './theme'
@@ -117,6 +117,7 @@ export class SettingsSheet {
   private body = h('div', 'settings-body')
   private state: SettingsState | null = null
   private updateState: UpdateState | null = null
+  private defaultTerminal: DefaultTerminalState | null = null
   private page = 'general'
   private restoreFocus: HTMLElement | null = null
   private recording: string | null = null
@@ -166,9 +167,14 @@ export class SettingsSheet {
 
   async open(page?: string): Promise<void> {
     if (!this.isOpen) this.restoreFocus = document.activeElement as HTMLElement | null
-    const [settings, updates] = await Promise.all([api.settings.get(), api.updates.get()])
+    const [settings, updates, defaultTerminal] = await Promise.all([
+      api.settings.get(),
+      api.updates.get(),
+      api.platform === 'win32' ? api.defaultTerminal.get() : Promise.resolve(null)
+    ])
     this.state = settings
     this.updateState = updates
+    this.defaultTerminal = defaultTerminal
     if (page) this.page = page
     this.el.hidden = false
     this.render()
@@ -383,6 +389,39 @@ export class SettingsSheet {
       choices: [['', visible[0] ? `${visible[0].name} (first in the list)` : 'First in the list'], ...visible.map((p): Choice => [p.id, p.name])]
     })
     this.field(g, { label: 'Ask before closing a terminal that is running a command', path: ['general', 'confirmClose'], control: 'toggle' })
+    if (api.platform === 'win32') this.renderDefaultTerminal()
+  }
+
+  /** Windows only: byndery in place of the PowerShell and Command Prompt windows Windows opens. */
+  private renderDefaultTerminal(): void {
+    const d = this.defaultTerminal
+    const g = this.group('Default terminal')
+    const row = h('div', 'settings-row')
+    row.style.gridTemplateColumns = 'minmax(0, 1fr) auto'
+    const text = h('div', 'settings-label')
+    const label = h('label', '', 'Open console programs in byndery')
+    label.htmlFor = 'default-terminal'
+    let hint = 'PowerShell, Command Prompt and other console programs started from Start, Explorer or Run open as byndery tabs instead of console windows.'
+    if (!d?.available) hint = 'Available in the installed app.'
+    else if (!d.supported) hint = 'Needs Windows 11 22H2 or later.'
+    else if (!d.terminalProxy) hint += ' Windows hands consoles over through Windows Terminal, which needs to be installed.'
+    text.append(label, h('div', 'settings-hint', hint))
+    const toggle = h('input', 'switch')
+    toggle.type = 'checkbox'
+    toggle.id = 'default-terminal'
+    toggle.dataset.focusKey = 'default-terminal'
+    toggle.checked = !!d?.enabled
+    toggle.disabled = !d?.available || !d.supported
+    toggle.addEventListener('change', () => {
+      toggle.disabled = true
+      void api.defaultTerminal.set(toggle.checked).then((state) => {
+        this.defaultTerminal = state
+        this.render()
+      })
+    })
+    row.append(text, wrap(toggle))
+    g.append(row)
+    if (d?.error) g.append(h('div', 'settings-hint warn', d.error))
   }
 
   private renderUpdates(): void {

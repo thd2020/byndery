@@ -53,6 +53,10 @@ async function download(url, dest) {
 
 const sha256 = (file) => createHash('sha256').update(readFileSync(file)).digest('hex')
 
+// Shallow clones with symlinks checked out as plain files: zsh-syntax-highlighting
+// links its READMEs, and the Windows installer's 7-Zip cannot pack symlinks.
+const CLONE = ['-c', 'core.symlinks=false', 'clone', '--depth', '1']
+
 async function fetchArchive() {
   const dest = join(cache, MSYS2.file)
   if (existsSync(dest) && sha256(dest) === MSYS2.sha256) return dest
@@ -87,7 +91,8 @@ function extract(archive) {
   const gnu = gnuTar()
   if (gnu) {
     const env = { ...process.env, PATH: gnu.path.join(';') + ';' + process.env.PATH }
-    execFileSync(gnu.tar, ['-xJf', archive.replace(/\\/g, '/'), '-C', vendor.replace(/\\/g, '/')], { env, stdio: 'inherit' })
+    // --force-local: GNU tar otherwise reads the drive letter in D:/x as a remote host.
+    execFileSync(gnu.tar, ['--force-local', '-xJf', archive.replace(/\\/g, '/'), '-C', vendor.replace(/\\/g, '/')], { env, stdio: 'inherit' })
   } else {
     execFileSync('tar.exe', ['-xf', archive, '-C', vendor], { stdio: 'inherit' })
   }
@@ -149,7 +154,7 @@ function fetchP10k() {
   rmSync(dir, { recursive: true, force: true })
   for (const url of P10K_REPOS) {
     log(`cloning ${url}`)
-    const r = spawnSync('git', ['clone', '--depth', '1', url, dir], { stdio: 'inherit' })
+    const r = spawnSync('git', CLONE.concat(url, dir), { stdio: 'inherit' })
     if (r.status === 0) {
       rmSync(join(dir, '.git'), { recursive: true, force: true })
       return dir
@@ -224,7 +229,7 @@ async function fetchPlugins() {
     if (existsSync(dest) && !force) continue
     rmSync(dest, { recursive: true, force: true })
     log(`cloning ${name}`)
-    const r = spawnSync('git', ['clone', '--depth', '1', url, dest], { stdio: 'inherit' })
+    const r = spawnSync('git', CLONE.concat(url, dest), { stdio: 'inherit' })
     if (r.status !== 0) throw new Error(`could not clone ${name}`)
     rmSync(join(dest, '.git'), { recursive: true, force: true })
   }

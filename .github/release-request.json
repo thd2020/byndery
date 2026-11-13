@@ -1,0 +1,4 @@
+{
+  "tag": "v0.0.1",
+  "reason": "The first v0.0.1 run never built: its attestation pin was wrong. Build every installer from main, with the default-terminal handoff, and publish the draft."
+}

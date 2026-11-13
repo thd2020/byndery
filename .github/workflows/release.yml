@@ -1,3 +1,12 @@
+# Builds the six installers and publishes them as a GitHub Release.
+#
+# A pushed v* tag builds that tag. tag-release.yml starts this workflow for a
+# new package.json version (built from the tag) or for a rebuild request
+# (built from main). workflow_dispatch builds the chosen ref and attaches the
+# files to `attach_tag`, replacing files with the same names.
+#
+# The release stays a draft until every build has uploaded, so the updater
+# (releases/latest) never sees a release with missing installers.
 name: release
 
 on:
@@ -13,6 +22,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: release-${{ inputs.attach_tag || github.ref_name }}
+  cancel-in-progress: false
+
 jobs:
   prepare-release:
     runs-on: ubuntu-latest
@@ -22,22 +35,20 @@ jobs:
       tag: ${{ steps.release.outputs.tag }}
       draft: ${{ steps.release.outputs.draft }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ inputs.attach_tag || github.ref }}
       - name: Create a draft release
         id: release
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           ATTACH_TAG: ${{ inputs.attach_tag }}
           REF_NAME: ${{ github.ref_name }}
         run: |
           set -euo pipefail
           TAG="${ATTACH_TAG:-$REF_NAME}"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          if gh release view "$TAG" --json isDraft -q .isDraft >/dev/null 2>&1; then
-            DRAFT="$(gh release view "$TAG" --json isDraft -q .isDraft)"
-          else
+          # The releases list includes drafts, which the tag lookup does not.
+          DRAFT="$(gh api "repos/$GH_REPO/releases" --paginate -q ".[] | select(.tag_name == \"$TAG\") | .draft" | head -n1)"
+          if [ -z "$DRAFT" ]; then
             gh release create "$TAG" --verify-tag --draft --title "$TAG" --generate-notes
             DRAFT=true
           fi
@@ -45,79 +56,13 @@ jobs:
 
   build:
     needs: prepare-release
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: windows-latest
-            target: --win --x64
-            label: windows-x64
-            attest: dist/*.exe
-          - runner: windows-11-arm
-            target: --win --arm64
-            label: windows-arm64
-            attest: dist/*.exe
-          - runner: macos-15-intel
-            target: --mac --x64
-            label: macos-x64
-            attest: dist/*.dmg
-          - runner: macos-latest
-            target: --mac --arm64
-            label: macos-arm64
-            attest: dist/*.dmg
-          - runner: ubuntu-22.04
-            target: --linux --x64
-            label: linux-x64
-            attest: |
-              dist/*.AppImage
-              dist/*.deb
-              dist/*.rpm
-          - runner: ubuntu-22.04-arm
-            target: --linux --arm64
-            label: linux-arm64
-            attest: |
-              dist/*.AppImage
-              dist/*.deb
-              dist/*.rpm
     permissions:
       contents: write
       id-token: write
       attestations: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ needs.prepare-release.outputs.tag }}
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: '24'
-          cache: npm
-      - name: Install Linux packaging tools
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential libatspi2.0-dev libglib2.0-dev libwayland-dev fakeroot dpkg rpm squashfs-tools
-      - name: Install dependencies
-        run: npm ci
-      - name: Prepare icons and bundled resources
-        run: npm run package:assets
-      - name: Build the app
-        run: npm run build
-      - name: Build installers
-        run: npx electron-builder ${{ matrix.target }} --publish never
-      - name: Write SHA-256 files and upload installers
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ needs.prepare-release.outputs.tag }}
-        run: |
-          $files = node scripts/write-checksums.mjs | ConvertFrom-Json
-          gh release upload $env:TAG $files --clobber
-      - name: Attest installers
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
-        with:
-          subject-path: ${{ matrix.attest }}
+    uses: ./.github/workflows/package.yml
+    with:
+      tag: ${{ needs.prepare-release.outputs.tag }}
 
   publish-release:
     needs: [prepare-release, build]
@@ -129,5 +74,10 @@ jobs:
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           TAG: ${{ needs.prepare-release.outputs.tag }}
-        run: gh release edit "$TAG" --draft=false
+        run: |
+          set -euo pipefail
+          ID="$(gh api "repos/$GH_REPO/releases" --paginate -q ".[] | select(.tag_name == \"$TAG\" and .draft) | .id" | head -n1)"
+          gh api -X PATCH "repos/$GH_REPO/releases/$ID" -F draft=false -f make_latest=true >/dev/null
+          echo "::notice::Published $TAG."

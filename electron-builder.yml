@@ -1,8 +1,15 @@
 appId: com.holarky.byndery
 productName: byndery
 asar: true
+# node-pty is a Node-API module with prebuilt binaries for Windows and macOS and
+# is compiled by `npm ci` on Linux, so it needs no rebuild against Electron.
+npmRebuild: false
+# Release.yml owns the GitHub Release; never publish from electron-builder.
+publish: null
 asarUnpack:
   - "**/*.node"
+  # conpty.dll, OpenConsole.exe and winpty-agent.exe are loaded from disk next to the .node files.
+  - "**/node_modules/node-pty/**"
 directories:
   output: dist
 files:
@@ -28,11 +35,14 @@ extraResources:
 win:
   icon: packaging/icon.ico
   requestedExecutionLevel: asInvoker
+  # byndery-handoff.exe, built by scripts/build-handoff.mjs: lets Windows hand consoles to byndery.
+  extraResources:
+    - from: build/handoff/byndery-handoff.exe
+      to: handoff/byndery-handoff.exe
+  # No arch lists here: each release job builds one arch on a native runner,
+  # chosen with --x64 or --arm64, so native files match the package.
   target:
-    - target: nsis
-      arch:
-        - x64
-        - arm64
+    - nsis
   artifactName: byndery-${version}-${os}-${arch}.${ext}
 nsis:
   oneClick: false
@@ -41,29 +51,21 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
+  # Offers byndery as the default terminal on the finish page; see packaging/installer.nsh.
+  include: packaging/installer.nsh
 mac:
   icon: packaging/icon.icns
   category: public.app-category.developer-tools
   target:
-    - target: dmg
-      arch:
-        - x64
-        - arm64
+    - dmg
   artifactName: byndery-${version}-${os}-${arch}.${ext}
 linux:
   icon: README.assets/byndery-icon.png
   category: Development
+  # deb and rpm need a maintainer.
+  maintainer: thd2020 <74453079+thd2020@users.noreply.github.com>
   target:
-    - target: AppImage
-      arch:
-        - x64
-        - arm64
-    - target: deb
-      arch:
-        - x64
-        - arm64
-    - target: rpm
-      arch:
-        - x64
-        - arm64
+    - AppImage
+    - deb
+    - rpm
   artifactName: byndery-${version}-${os}-${arch}.${ext}
