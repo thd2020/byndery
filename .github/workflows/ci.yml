@@ -1,4 +1,4 @@
-# Type checks and tests on pull requests and main. Pull requests also build all
+# Type checks and tests (TypeScript and Rust) on pull requests and main. Pull requests also build all
 # six installers (package.yml), so a release cannot be the first time they build.
 name: ci
 
@@ -17,17 +17,31 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24'
           cache: npm
+      - name: Install WebKitGTK for the Rust tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libayatana-appindicator3-dev
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: cargo-test-${{ hashFiles('src-tauri/Cargo.lock', 'src-tauri/Cargo.toml') }}
+          restore-keys: cargo-test-
       - run: npm ci
       - run: npm run typecheck
-      - run: npm test
       - run: npm run build
+      # The backend needs its icons and the built pages to compile.
+      - run: npm run icons
+      - run: npm test
 
   package:
     if: github.event_name == 'pull_request'

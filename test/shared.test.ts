@@ -3,7 +3,6 @@ import assert from 'node:assert/strict'
 import { findPaths } from '../src/shared/links.ts'
 import { rank } from '../src/shared/fuzzy.ts'
 import { fromMsys, toMsys, normalize, join, relative, relativeFrom, shellQuote, dirname } from '../src/shared/paths.ts'
-import { parse } from '../src/main/git.ts'
 
 const one = (s: string) => {
   const r = findPaths(s)
@@ -70,28 +69,4 @@ test('fuzzy ranking prefers file names and segment starts', () => {
   assert.equal(rank('terminal', files)[0].item, 'src/renderer/terminal.ts')
   assert.equal(rank('land', files)[0].item, 'docs/landscape.md')
   assert.equal(rank('xyz', files).length, 0)
-})
-
-test('git porcelain v2 parsing', () => {
-  const out = [
-    '# branch.oid abc',
-    '# branch.head main',
-    '# branch.ab +2 -1',
-    '1 .M N... 100644 100644 100644 a a src/a b.ts',
-    '1 A. N... 000000 100644 100644 0 a new.md',
-    '2 R. N... 100644 100644 100644 a a R100 renamed.ts',
-    'old.ts',
-    '? untracked.txt',
-    '! node_modules/',
-    ''
-  ].join('\0')
-  const s = parse('C:/repo', out)
-  assert.equal(s.branch, 'main')
-  assert.equal(s.ahead, 2)
-  assert.equal(s.behind, 1)
-  assert.equal(s.files['C:/repo/src/a b.ts'], 'M')
-  assert.equal(s.files['C:/repo/new.md'], 'A')
-  assert.equal(s.files['C:/repo/renamed.ts'], 'R')
-  assert.equal(s.files['C:/repo/untracked.txt'], 'U')
-  assert.deepEqual(s.ignored, ['C:/repo/node_modules'])
 })
