@@ -8,7 +8,7 @@
 // only Powerlevel10k is fetched, because zsh is already part of the system.
 
 import { createHash } from 'node:crypto'
-import { createWriteStream, existsSync, mkdirSync, readFileSync, writeFileSync, rmSync, readdirSync } from 'node:fs'
+import { createWriteStream, existsSync, mkdirSync, readFileSync, writeFileSync, rmSync, readdirSync, statSync } from 'node:fs'
 import { execFileSync, spawnSync } from 'node:child_process'
 import { join, resolve } from 'node:path'
 import { pipeline } from 'node:stream/promises'
@@ -27,7 +27,8 @@ const MIRRORS = {
   ustc: { distrib: 'https://mirrors.ustc.edu.cn/msys2/distrib/x86_64/', repo: 'https://mirrors.ustc.edu.cn/msys2/' }
 }
 const P10K_REPOS = ['https://github.com/romkatv/powerlevel10k.git', 'https://gitee.com/romkatv/powerlevel10k.git']
-const PACKAGES = ['zsh', 'git']
+// zstd packs the bundle (pack below) and stays: pacman uses it too.
+const PACKAGES = ['zsh', 'git', 'zstd']
 
 const args = process.argv.slice(2)
 const opt = (name, def) => {
@@ -243,6 +244,65 @@ async function fetchPlugins() {
   }
 }
 
+// git ships its 149 built-in commands (git-add.exe, git-commit.exe, ...) as
+// hard links to git.exe. The installer would store each as a full 4 MB copy,
+// and git runs them all from git.exe anyway. Only the ones git starts by
+// their own name stay: upload-pack, receive-pack and upload-archive, which
+// clone, fetch and push run on the other side of a local or SSH connection.
+function dropGitCopies() {
+  const keep = new Set(['git-upload-pack.exe', 'git-receive-pack.exe', 'git-upload-archive.exe'])
+  const ref = join(msys, 'usr', 'bin', 'git.exe')
+  if (!existsSync(ref)) return
+  const size = statSync(ref).size
+  const hash = sha256(ref)
+  let n = 0
+  for (const dir of [join(msys, 'usr', 'bin'), join(msys, 'usr', 'lib', 'git-core')]) {
+    if (!existsSync(dir)) continue
+    for (const f of readdirSync(dir)) {
+      if (!/^git-.+\.exe$/i.test(f) || keep.has(f.toLowerCase())) continue
+      const p = join(dir, f)
+      if (statSync(p).size !== size || sha256(p) !== hash) continue
+      rmSync(p)
+      n++
+    }
+  }
+  log(`removed ${n} copies of git.exe (${Math.round((n * size) / 2 ** 20)} MB)`)
+}
+
+// Translations, man pages and docs: about 85 MB nobody reads in a terminal
+// app. pacman is told to leave them out of later installs too.
+const DOCS = ['usr/share/locale', 'usr/share/man', 'usr/share/doc', 'usr/share/info', 'usr/share/gtk-doc', 'ucrt64/share/locale', 'ucrt64/share/man', 'ucrt64/share/doc', 'ucrt64/share/info']
+function pruneDocs() {
+  for (const rel of DOCS) rmSync(join(msys, ...rel.split('/')), { recursive: true, force: true })
+  const conf = join(msys, 'etc', 'pacman.conf')
+  const text = readFileSync(conf, 'utf8')
+  if (!text.includes('# byndery: NoExtract')) {
+    const rule = `# byndery: NoExtract\nNoExtract = ${DOCS.map((d) => `${d}/*`).join(' ')}\n`
+    writeFileSync(conf, text.replace(/^\[options\]\r?\n/m, (m) => m + rule))
+  }
+  log('removed translations, man pages and docs')
+}
+
+function countEntries(dir) {
+  let n = 1
+  for (const e of readdirSync(dir, { withFileTypes: true })) n += e.isDirectory() ? countEntries(join(dir, e.name)) : 1
+  return n
+}
+
+// The installer carries MSYS2 as one archive, unpacked into the user's
+// local app data on install (src-tauri/src/msys.rs): one file instead of
+// 17,000 for the installer, and hard links stay links.
+function pack() {
+  const out = join(vendor, 'msys64.tar.zst')
+  rmSync(out, { force: true })
+  log('packing msys64.tar.zst')
+  const v = vendor.replace(/\\/g, '/')
+  bash(`cd "$(cygpath -u '${v}')" && tar --format=gnu -cf - msys64 | zstd -19 -T0 -q -o msys64.tar.zst`)
+  writeFileSync(join(vendor, 'msys64.count'), String(countEntries(msys)) + '\n')
+  writeFileSync(join(vendor, 'msys64.stamp'), sha256(out) + '\n')
+  log(`packed ${Math.round(statSync(out).size / 2 ** 20)} MB`)
+}
+
 const archiveStep = async () => {
   if (process.platform !== 'win32') return
   const archive = await fetchArchive()
@@ -250,6 +310,9 @@ const archiveStep = async () => {
   configure()
   installPackages()
   writePackageList()
+  dropGitCopies()
+  pruneDocs()
+  pack()
 }
 
 if (process.platform === 'win32' && process.arch !== 'x64') {
