@@ -126,6 +126,14 @@ fn create_window(app: &AppHandle) -> R<WebviewWindow> {
     if saved["maximized"] == json!(true) {
         let _ = w.maximize();
     }
+    // The page shows the window once it has drawn; if the page never gets that far, show it anyway.
+    let late = w.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_secs(5));
+        if !late.is_visible().unwrap_or(true) {
+            let _ = late.show();
+        }
+    });
     apply_theme(app, &st.settings.get());
     Ok(w)
 }
