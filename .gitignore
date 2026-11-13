@@ -12,3 +12,4 @@ out/
 dist/
 vendor/
 src/renderer/src/assets/fonts/
+build/
