@@ -87,7 +87,8 @@ function extract(archive) {
   const gnu = gnuTar()
   if (gnu) {
     const env = { ...process.env, PATH: gnu.path.join(';') + ';' + process.env.PATH }
-    execFileSync(gnu.tar, ['-xJf', archive.replace(/\\/g, '/'), '-C', vendor.replace(/\\/g, '/')], { env, stdio: 'inherit' })
+    // --force-local: GNU tar otherwise reads the drive letter in D:/x as a remote host.
+    execFileSync(gnu.tar, ['--force-local', '-xJf', archive.replace(/\\/g, '/'), '-C', vendor.replace(/\\/g, '/')], { env, stdio: 'inherit' })
   } else {
     execFileSync('tar.exe', ['-xf', archive, '-C', vendor], { stdio: 'inherit' })
   }
