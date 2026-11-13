@@ -1,5 +1,6 @@
 //! byndery's own MSYS2 (Windows). The installer carries it as one archive,
-//! vendor/msys64.tar.zst, which is unpacked into %LOCALAPPDATA%\byndery\msys64.
+//! vendor/msys64.tar.zst, which is unpacked into
+//! %LOCALAPPDATA%\com.holarky.byndery\msys64.
 //! It lives outside the app folder so app updates never touch it: packages the
 //! user adds with pacman stay. Repair unpacks the base again over the tree,
 //! which restores missing or damaged files and keeps added packages.
