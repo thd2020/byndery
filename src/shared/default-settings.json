@@ -1,0 +1,73 @@
+{
+  "general": {
+    "theme": "system",
+    "defaultProfile": "",
+    "confirmClose": true
+  },
+  "profileDefaults": {
+    "fontFamily": "MesloLGS NF",
+    "fontSize": 13,
+    "lineHeight": 1.25,
+    "fontWeight": 400,
+    "cursorStyle": "bar",
+    "cursorBlink": true,
+    "colorScheme": "byndery",
+    "scrollback": 10000,
+    "copyOnSelect": false,
+    "rightClickPastes": false,
+    "promptStyle": "rainbow"
+  },
+  "profiles": {},
+  "commands": {
+    "order": [
+      "linux",
+      "powershell",
+      "cmd"
+    ],
+    "enabled": {
+      "linux": true,
+      "powershell": true,
+      "cmd": true
+    },
+    "prefixes": {
+      "linux": "zsh:",
+      "powershell": "pwsh:",
+      "cmd": "cmd:"
+    },
+    "overrides": {
+      "dir": "cmd"
+    },
+    "powershellSyntax": true
+  },
+  "files": {
+    "sync": false
+  },
+  "editor": {
+    "fontSize": 13,
+    "tabSize": 4,
+    "wordWrap": false,
+    "markdownPreview": true
+  },
+  "history": {
+    "enabled": true
+  },
+  "keys": {},
+  "shell": {
+    "plugins": {
+      "autosuggestions": true,
+      "syntaxHighlighting": true,
+      "completions": true,
+      "historySubstringSearch": true,
+      "gitAliases": true
+    },
+    "offerInstall": true,
+    "aliases": {},
+    "env": {},
+    "path": []
+  },
+  "integration": {
+    "explorerMenu": true,
+    "gitBashForApps": false,
+    "toolsOnPath": false
+  }
+}

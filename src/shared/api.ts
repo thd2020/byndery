@@ -14,6 +14,8 @@ export interface TermInfo {
   cwd: string
   integrated: boolean
   msys?: MsysMounts
+  /** The WSL distribution, for wsl.exe profiles: their paths are /mnt/c/... */
+  wsl?: string
   /** Shown on the tab instead of the folder: set for a console Windows handed to byndery. */
   title?: string
 }
@@ -78,6 +80,20 @@ export interface DefaultTerminalState {
   error: string | null
 }
 
+/** byndery's own MSYS2 and its links to the rest of Windows (Settings > Tools). */
+export interface ToolsStatus {
+  /** This build carries the MSYS2 archive (Windows x64). */
+  bundled: boolean
+  installed: boolean
+  healthy: boolean
+  /** Critical files that are gone. */
+  missing: string[]
+  path: string
+  /** Packages added with pacman on top of byndery's base. */
+  added: string[]
+  integration: { explorerMenu: boolean; gitBashForApps: boolean; gitBashPath: string | null; bash: string | null }
+}
+
 export interface Bridge {
   platform: NodeJS.Platform
   win: {
@@ -86,6 +102,8 @@ export interface Bridge {
     close(): void
     setTitleBarColors(bg: string, fg: string): void
     onMaximized(cb: (max: boolean) => void): void
+    /** The page has drawn; the window shows. */
+    ready(): void
   }
   workspace: {
     initial(): Promise<string>
@@ -94,8 +112,8 @@ export interface Bridge {
     saveAs(defaultPath: string): Promise<string | null>
   }
   term: {
-    /** Starts a terminal from a profile, or the default profile when none is given. */
-    create(cwd: string, cols: number, rows: number, profile?: string): Promise<TermInfo>
+    /** Starts a terminal from a profile, or the default profile when none is given; `run` is a first command for zsh. */
+    create(cwd: string, cols: number, rows: number, profile?: string, run?: string): Promise<TermInfo>
     write(id: number, data: string): void
     ack(id: number, chars: number): void
     resize(id: number, cols: number, rows: number): void
@@ -164,6 +182,14 @@ export interface Bridge {
     get(): Promise<DefaultTerminalState>
     set(enabled: boolean): Promise<DefaultTerminalState>
   }
+  tools: {
+    status(): Promise<ToolsStatus>
+    /** Unpacks byndery's base again over its MSYS2: restores damaged files, keeps added packages. */
+    repair(): Promise<ToolsStatus>
+    onProgress(cb: (fraction: number) => void): void
+  }
+  /** A URL the page can load a local file from (images in rendered Markdown). */
+  fileUrl(path: string): string
   menu(items: MenuItem[]): Promise<string | null>
   /** Native message box; resolves to the index of the button pressed. */
   confirm(message: string, detail: string, buttons: string[]): Promise<number>
