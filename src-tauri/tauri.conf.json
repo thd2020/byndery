@@ -1,0 +1,49 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "byndery",
+  "version": "../package.json",
+  "identifier": "com.holarky.byndery",
+  "build": {
+    "frontendDist": "../out/renderer",
+    "devUrl": "http://localhost:5173",
+    "beforeDevCommand": "npm run dev:renderer",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "windows": [],
+    "withGlobalTauri": false,
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https: byndery-file: http://byndery-file.localhost; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost ws://localhost:5173"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis", "dmg", "appimage", "deb", "rpm"],
+    "publisher": "thd2020",
+    "category": "DeveloperTool",
+    "shortDescription": "A terminal, file tree and editor in one window",
+    "longDescription": "A terminal, file tree and editor in one window, built to sit beside terminal coding agents such as Claude Code and Codex.",
+    "license": "MIT",
+    "licenseFile": "../LICENSE",
+    "homepage": "https://github.com/thd2020/byndery",
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"],
+    "resources": {
+      "../resources/shell/": "shell/",
+      "../THIRD-PARTY-NOTICES.md": "THIRD-PARTY-NOTICES.md"
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "installerHooks": "../packaging/installer.nsh",
+        "displayLanguageSelector": false
+      },
+      "webviewInstallMode": { "type": "downloadBootstrapper", "silent": true }
+    },
+    "linux": {
+      "deb": { "section": "devel" },
+      "rpm": { "release": "1" },
+      "appimage": { "bundleMediaFramework": false }
+    },
+    "macOS": { "minimumSystemVersion": "11.0" }
+  }
+}

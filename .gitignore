@@ -5,11 +5,14 @@ WORKLOG.md
 .env
 .env.*
 .*-seed-imported
-packaging/icon.ico
-packaging/icon.icns
 node_modules/
 out/
 dist/
 vendor/
 src/renderer/src/assets/fonts/
 build/
+src-tauri/target/
+src-tauri/gen/
+# Generated from README.assets/byndery-icon.png by `npm run icons`.
+src-tauri/icons/
+src-tauri/Cargo.lock

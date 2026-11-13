@@ -1,6 +1,6 @@
 # byndery design route
 
-2026-11-12: Release installers bundle the Electron app and its native terminal dependency for Windows x64 and ARM64, macOS Intel and Apple Silicon, and Linux x64 and ARM64. Windows x64 also bundles MSYS2; other targets use the shells provided by their operating system. Byndery can host PowerShell and Command Prompt with the signed-in user's permissions, and on Windows 11 22H2 and later it can be the default terminal for console programs started outside it (see [`RELEASE.md`](RELEASE.md)).
+2026-11-13: byndery moved from Electron to Tauri: the backend is Rust (`src-tauri`) and the page is drawn by the system's web view; the renderer is unchanged behind the same `Bridge` interface. Release installers cover Windows x64 and ARM64, macOS Intel and Apple Silicon, and Linux x64 and ARM64. Windows x64 also bundles MSYS2; other targets use the shells provided by their operating system. Byndery can host PowerShell and Command Prompt with the signed-in user's permissions, and on Windows 11 22H2 and later it can be the default terminal for console programs started outside it (see [`RELEASE.md`](RELEASE.md)).
 
 Written 2026-11-09, when the first build of the terminal, the file tree and the editor landed, and updated the same day for keys, folder sync, the prompt and settings. [`landscape.md`](landscape.md) has the market scan this builds on; this memo says what we took from it, what we decided against, and what the first build contains.
 
@@ -39,15 +39,15 @@ The research pass looked at Warp, Wave, Zed, Ghostty, cmux, Conductor, Nimbalyst
 | The prompt and line editor replaced by the app's own | Warp | Raw pty bytes in both directions. Integration only adds escape sequences. |
 | The file tree hidden or reset by layout changes | Cursor 3, Codex app | The tree is always there unless you hide it, and the layout persists. |
 | Markdown shown raw; relative images resolved against the wrong folder | Claude Code desktop, Codex app | Rendered when you want it; images resolve against the file's own folder. |
-| Electron terminals that feel slow | Hyper, Wave | WebGL renderer, batched and flow-controlled pty output, a virtualised tree, no UI framework. |
-| Output repeated after a resize on Windows | VS Code, Zed | ConPTY build number passed to xterm.js; resizes debounced; node-pty's newer bundled ConPTY. |
+| Electron terminals that feel slow and heavy | Hyper, Wave | Tauri with the system's web view, a Rust backend, WebGL renderer, batched and flow-controlled pty output, a virtualised tree, no UI framework. |
+| Output repeated after a resize on Windows | VS Code, Zed | ConPTY build number passed to xterm.js; resizes debounced. |
 | Git Bash not found | Claude Code, Cursor | byndery brings its own shell environment, and finds Git Bash the way VS Code does as a fallback. |
 | Background events stealing focus | VS Code with agents | Nothing but your own action moves focus. |
-| Notes locked into one app's folder format | Obsidian | Any folder opens as it is; app state lives in Electron's user-data folder. |
+| Notes locked into one app's folder format | Obsidian | Any folder opens as it is; app state lives in byndery's own data folder. |
 
 ## Native feel and speed
 
-The window uses the system's own caption buttons (`titleBarOverlay`), so snap layouts and the maximise behaviour are Windows' own. Context menus are native menus. The interface follows the system's light or dark setting, and the caption buttons are recoloured to match.
+On macOS the window keeps the system's traffic lights over byndery's title bar. On Windows and Linux byndery draws its own caption buttons at the right of the title bar, which moves the window and maximises on double-click. Context menus are native menus. The interface follows the system's light or dark setting.
 
 The renderer is plain TypeScript with no UI framework. The terminal draws with WebGL. Pty output crosses IPC in batches every five milliseconds, and the pty pauses while the renderer has more than 512 KB unparsed, which is the watermark scheme from the xterm.js flow-control guide. Only the visible rows of the tree exist in the DOM. Editor languages load on first use. The prompt runs without forking except for git, because each fork costs tens of milliseconds under MSYS2.
 
@@ -55,7 +55,7 @@ The renderer is plain TypeScript with no UI framework. The terminal draws with W
 
 ![Screenshot of byndery in dark mode with the same three panes](design.assets/overview-dark.png)
 
-*Dark mode follows the system setting, and the system's caption buttons are recoloured to match.*
+*Dark mode follows the system setting, and the caption buttons follow it.*
 
 Source Serif 4 for the interface and for prose, bundled so every platform gets the same face. Its optical-size axis switches to the caption design at 12 to 13 px, which keeps small labels sturdy. Cascadia Mono for code in the editor, and MesloLGS NF in the terminal, because the prompt is drawn for it. Warm neutrals with one accent, the mint of the icon's bowl; amber marks modified files and red marks failures and conflicts.
 
@@ -146,7 +146,7 @@ Powerlevel10k's git segment does not appear inside worktrees whose `.git` file r
 
 Settings work the way Windows Terminal and Konsole work, because people who live in terminals already know those two. `settings.json` holds only what you changed; the defaults live in the code, as in VS Code and Windows Terminal, so a new version can improve a default you never touched. The file may have comments and trailing commas. Open settings.json in Settings opens it in byndery's editor, and a saved edit applies at once; a file that cannot be read is reported at the top of Settings while the last good settings stay in force.
 
-Terminal settings live in profiles. byndery makes one for each shell it finds (the bundled zsh, Git Bash, PowerShell, Windows PowerShell and Command Prompt on Windows; the shells in `/etc/shells` elsewhere), and you can add your own or duplicate one. Every profile inherits font, size, line height, weight, colour scheme, cursor, scrollback, copy on select, right-click paste and the zsh prompt style from Profile defaults, and can override any of them. A reset arrow appears beside every value the page overrides, as in Windows Terminal's settings. Changes apply to terminals that are already open. The menu beside + starts any profile.
+Terminal settings live in profiles. byndery makes one for each shell it finds (the bundled zsh, Git Bash, PowerShell, Windows PowerShell, Command Prompt and each WSL distribution on Windows; the shells in `/etc/shells` elsewhere), and you can add your own or duplicate one. Every profile inherits font, size, line height, weight, colour scheme, cursor, scrollback, copy on select, right-click paste and the zsh prompt style from Profile defaults, and can override any of them. A reset arrow appears beside every value the page overrides, as in Windows Terminal's settings. Changes apply to terminals that are already open. The menu beside + starts any profile.
 
 ![Screenshot of the zsh profile page in Settings: name, command, arguments and start folder, then text, cursor and behaviour settings](design.assets/settings-profile.png)
 
@@ -165,7 +165,7 @@ byndery remembers every command with its output, folder, exit code, duration and
 The model is Atuin, which keeps shell history in SQLite and added output capture of its own in 2026. byndery follows its choices where they apply:
 
 - Ctrl+K opens the search and, pressed again, cycles its scope: everything, this workspace, this folder, this terminal. Enter runs the selected command and Tab puts it on the prompt, as in Atuin's shipped config. Atuin itself takes Ctrl+R; byndery leaves that key to the shell.
-- Search matches any part of a command or its output, three characters or longer, in any script. It is SQLite's FTS5 index with the trigram tokenizer, built into the Node.js inside Electron, so nothing native is added.
+- Search matches any part of a command or its output, three characters or longer, in any script. It is SQLite's FTS5 index with the trigram tokenizer, built into the SQLite the Rust backend carries.
 - A command typed with a leading space is not kept. Credentials in commands and output (provider tokens, private keys, JWTs, `password=` values) are replaced with ‹redacted› before anything is written. The output of commands that exist to print secrets, such as `printenv`, `gh auth token` and `cat .env`, is never kept.
 - Each output keeps its first and last half megabyte, and the oldest outputs are dropped once all of them pass 512 MB; the commands stay.
 - On first start, earlier commands come in from `$HISTFILE` or `~/.zsh_history` and `~/.bash_history`, without output.
@@ -187,5 +187,4 @@ The order below follows what the research ranked most valuable and what the firs
 4. Sync the command memory across devices with end-to-end encryption on the Holarky account, and share a command with its output as a link, choosing which parts go, as Warp's shared blocks do.
 5. Attention marks: a badge on a terminal tab when its command finishes or an agent waits for input.
 6. Split terminals, and a terminal search bar.
-7. Shell integration for PowerShell profiles, so sync, command marks and the command memory work there too; today they work in zsh and bash.
-8. The installer, with the bundle and the notices in it.
+7. Paths for files dropped onto a terminal from Explorer or Finder. The move to Tauri lost them: while the tree's own drag and drop works, the web view gives a dropped file no path.

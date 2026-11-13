@@ -6,6 +6,8 @@
 // and can override any field, and Settings shows a reset button on each
 // field a layer overrides.
 
+import defaults from './default-settings.json' with { type: 'json' }
+
 export type SystemId = 'linux' | 'powershell' | 'cmd'
 export const SYSTEMS: SystemId[] = ['linux', 'powershell', 'cmd']
 
@@ -98,37 +100,41 @@ export interface Settings {
   }
   /** Key bindings that differ from the defaults, by action id. */
   keys: Record<string, string[]>
+  /** zsh and bash setup, written to a file the shells read (Settings > Shell). */
+  shell: {
+    plugins: Record<ShellPlugin, boolean>
+    /** Offer to install a missing command with pacman (Windows). */
+    offerInstall: boolean
+    aliases: Record<string, string>
+    env: Record<string, string>
+    /** Folders added to the end of PATH. */
+    path: string[]
+  }
+  /** byndery's tools for the rest of Windows (Settings > Tools). */
+  integration: {
+    /** "Open in byndery" in Explorer's folder menu. */
+    explorerMenu: boolean
+    /** Point Claude Code at byndery's bash (CLAUDE_CODE_GIT_BASH_PATH). */
+    gitBashForApps: boolean
+    /** Add byndery's Linux tools to the end of the user's PATH. */
+    toolsOnPath: boolean
+  }
 }
 
-export const DEFAULT_SETTINGS: Settings = {
-  general: { theme: 'system', defaultProfile: '', confirmClose: true },
-  profileDefaults: {
-    fontFamily: 'MesloLGS NF',
-    fontSize: 13,
-    lineHeight: 1.25,
-    fontWeight: 400,
-    cursorStyle: 'bar',
-    cursorBlink: true,
-    colorScheme: 'byndery',
-    scrollback: 10000,
-    copyOnSelect: false,
-    rightClickPastes: false,
-    promptStyle: 'rainbow'
-  },
-  profiles: {},
-  commands: {
-    order: ['linux', 'powershell', 'cmd'],
-    enabled: { linux: true, powershell: true, cmd: true },
-    prefixes: { linux: 'zsh:', powershell: 'pwsh:', cmd: 'cmd:' },
-    // `dir` is a GNU program too, but on Windows people mean cmd's.
-    overrides: { dir: 'cmd' },
-    powershellSyntax: true
-  },
-  files: { sync: false },
-  editor: { fontSize: 13, tabSize: 4, wordWrap: false, markdownPreview: true },
-  history: { enabled: true },
-  keys: {}
-}
+export type ShellPlugin = 'autosuggestions' | 'syntaxHighlighting' | 'completions' | 'historySubstringSearch' | 'gitAliases'
+
+export const SHELL_PLUGINS: [ShellPlugin, string, string][] = [
+  ['autosuggestions', 'Suggestions as you type', 'Grey completions from your history; the right arrow accepts.'],
+  ['syntaxHighlighting', 'Syntax colours', 'Commands, strings and errors coloured as you type.'],
+  ['completions', 'Extra completions', 'Tab completion for hundreds more programs.'],
+  ['historySubstringSearch', 'History search on the arrow keys', 'Up and down find earlier commands containing what you typed.'],
+  ['gitAliases', 'Git aliases', 'Oh My Zsh\'s short forms: gst, gco, gp and the rest.']
+]
+
+// One file for the defaults, read by the renderer and built into the backend
+// (src-tauri/src/settings.rs), so the two never disagree. `dir` is pinned to
+// cmd: it is a GNU program too, but on Windows people mean cmd's.
+export const DEFAULT_SETTINGS: Settings = defaults as Settings
 
 export const SYSTEM_NAMES: Record<SystemId, string> = { linux: 'Linux', powershell: 'PowerShell', cmd: 'Command Prompt' }
 

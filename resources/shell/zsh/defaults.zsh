@@ -17,7 +17,7 @@ bindkey '^[[A' up-line-or-beginning-search '^[[B' down-line-or-beginning-search
 
 # Completion, case-insensitive because Windows file names are. The bundled
 # zsh-completions definitions join fpath before compinit reads it.
-[[ -d $BYNDERY_ZSH_PLUGINS/zsh-completions/src ]] && fpath=($BYNDERY_ZSH_PLUGINS/zsh-completions/src $fpath)
+[[ -d $BYNDERY_ZSH_PLUGINS/zsh-completions/src && " $BYNDERY_PLUGINS_OFF " != *" completions "* ]] && fpath=($BYNDERY_ZSH_PLUGINS/zsh-completions/src $fpath)
 autoload -Uz compinit
 () {
   local dump=${XDG_CACHE_HOME:-$HOME/.cache}/zsh/zcompdump-$ZSH_VERSION

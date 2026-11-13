@@ -10,8 +10,10 @@
 [[ -n $BYNDERY_ZSH_PLUGINS && -d $BYNDERY_ZSH_PLUGINS ]] || return 0
 () {
   local dir=$BYNDERY_ZSH_PLUGINS
+  # Settings > Shell can switch each one off (BYNDERY_PLUGINS_OFF, from the managed file).
+  local -a off=(${=BYNDERY_PLUGINS_OFF})
 
-  if (( ! $+functions[_zsh_autosuggest_start] )); then
+  if (( ! $+functions[_zsh_autosuggest_start] && ! ${off[(Ie)autosuggestions]} )); then
     # History only: the completion strategy runs a hidden shell per key,
     # and starting processes is slow under MSYS2.
     ZSH_AUTOSUGGEST_STRATEGY=(history)
@@ -24,19 +26,19 @@
     [[ $OSTYPE == (msys|cygwin)* ]] && unset ZSH_AUTOSUGGEST_USE_ASYNC
   fi
 
-  if (( ! $+functions[history-substring-search-up] )); then
+  if (( ! $+functions[history-substring-search-up] && ! ${off[(Ie)history-substring-search]} )); then
     source $dir/zsh-history-substring-search/zsh-history-substring-search.zsh
     bindkey '^[[A' history-substring-search-up '^[OA' history-substring-search-up
     bindkey '^[[B' history-substring-search-down '^[OB' history-substring-search-down
   fi
 
   # Oh My Zsh users already have these aliases; everyone else gets them.
-  if [[ -z $ZSH ]] && (( ! $+functions[git_current_branch] )); then
+  if [[ -z $ZSH ]] && (( ! $+functions[git_current_branch] && ! ${off[(Ie)git-aliases]} )); then
     source $dir/ohmyzsh-git/git-lib.zsh
     source $dir/ohmyzsh-git/git.plugin.zsh
   fi
 
-  if (( ! $+ZSH_HIGHLIGHT_VERSION && ! $+FAST_HIGHLIGHT )); then
+  if (( ! $+ZSH_HIGHLIGHT_VERSION && ! $+FAST_HIGHLIGHT && ! ${off[(Ie)syntax-highlighting]} )); then
     ZSH_HIGHLIGHT_HIGHLIGHTERS=(main brackets)
     source $dir/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
   fi

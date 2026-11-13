@@ -435,9 +435,13 @@ static HANDLE tryConnect(const std::wstring& name) {
 }
 
 static bool launchByndery() {
-  // resources\handoff\byndery-handoff.exe -> byndery.exe in the install folder.
-  std::wstring dir = parentDir(parentDir(parentDir(selfPath())));
+  // <install>\handoff\byndery-handoff.exe -> <install>\byndery.exe; 0.0.1 kept it in resources\handoff.
+  std::wstring dir = parentDir(parentDir(selfPath()));
   std::wstring exe = dir + L"\\byndery.exe";
+  if (GetFileAttributesW(exe.c_str()) == INVALID_FILE_ATTRIBUTES) {
+    dir = parentDir(dir);
+    exe = dir + L"\\byndery.exe";
+  }
   if (GetFileAttributesW(exe.c_str()) == INVALID_FILE_ATTRIBUTES) return false;
   std::wstring command = L"\"" + exe + L"\" --handoff";
   STARTUPINFOW si = {};

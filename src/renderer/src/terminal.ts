@@ -11,7 +11,7 @@ import { unescapeCommandLine } from '../../shared/history'
 
 /** One id per window load; with the terminal id it names a session in the command memory. */
 const RUN_ID = Math.random().toString(36).slice(2, 8)
-import { basename, fromMsys, join, normalize, isWindowsPath, relativeFrom, shellQuote, toMsys } from '../../shared/paths'
+import { basename, convertPaste, fromDialect, join, normalize, isWindowsPath, quoteFor, relativeFrom, toDialect, type Dialect } from '../../shared/paths'
 import { api, Emitter, h, icon, ICON, isMac } from './bridge'
 import { terminalTheme, onThemeChange } from './theme'
 
@@ -92,7 +92,9 @@ export class TermView {
     startCwd: string,
     profileId?: string,
     /** A session that already runs, such as a console Windows handed over, to show instead of starting one. */
-    attachId?: number
+    attachId?: number,
+    /** A first command for the new shell (Settings > Tools). */
+    run?: string
   ) {
     this.profileId = profileId ?? mgr.defaultProfile()?.id ?? ''
     this.cwd = startCwd
@@ -154,7 +156,7 @@ export class TermView {
       e.preventDefault()
       // With "right click pastes", the menu is on Shift+right click.
       if (this.mgr.profile(this.profileId)?.rightClickPastes && !e.shiftKey) {
-        void api.clipboard.read().then((t) => t && this.xterm.paste(t))
+        void api.clipboard.read().then((t) => this.pasteText(t))
         return
       }
       void this.contextMenu()
@@ -167,7 +169,7 @@ export class TermView {
     this.fit.fit()
     const started =
       attachId == null
-        ? api.term.create(startCwd, this.xterm.cols, this.xterm.rows, profileId)
+        ? api.term.create(startCwd, this.xterm.cols, this.xterm.rows, profileId, run)
         : api.term.attach(attachId, this.xterm.cols, this.xterm.rows)
     this.ready = started.then((info) => {
       if (!info) {
@@ -254,11 +256,23 @@ export class TermView {
     this.tab.remove()
   }
 
-  /** Paths are pasted relative to the shell's folder when they are near it, MSYS-style for Git Bash. */
+  /** How this terminal writes paths: Windows, MSYS (/c/x), WSL (/mnt/c/x) or POSIX. */
+  get dialect(): Dialect & { shell?: string } {
+    const i = this.info
+    return { msys: i?.msys, wsl: i?.wsl, windows: !i?.msys && !i?.wsl && /^(pwsh|powershell|cmd)$/i.test(i?.shell ?? ''), shell: i?.shell }
+  }
+
+  /** Paths are pasted relative to the shell's folder when they are near it, in the terminal's own form. */
   pathForShell(p: string): string {
+    const d = this.dialect
     const rel = relativeFrom(this.cwd, p)
-    if (rel) return shellQuote(rel)
-    return shellQuote(this.info?.msys ? toMsys(p) : p)
+    if (rel) return quoteFor(d.windows ? rel.replace(/\//g, '\\') : rel, d)
+    return quoteFor(toDialect(p, d), d)
+  }
+
+  /** Clipboard text into the terminal; a lone absolute path is rewritten for this terminal. */
+  private pasteText(t: string): void {
+    if (t) this.xterm.paste(convertPaste(t, this.dialect))
   }
 
   scheduleFit(): void {
@@ -307,7 +321,7 @@ export class TermView {
         // Not percent-encoded after all.
       }
       if (/^\/[A-Za-z]:\//.test(p)) p = p.slice(1)
-      const cwd = this.info?.msys ? fromMsys(p, this.info.msys) : normalize(p)
+      const cwd = fromDialect(p, this.dialect)
       if (cwd !== this.cwd) {
         this.cwd = cwd
         this.renderTab()
@@ -510,7 +524,7 @@ export class TermView {
   private resolve(p: string): string | null {
     if (p.startsWith('~/') || p.startsWith('~\\')) return join(api.sys.home, p.slice(2))
     if (isWindowsPath(p)) return normalize(p)
-    if (p.startsWith('/')) return this.info?.msys ? fromMsys(p, this.info.msys) : normalize(p)
+    if (p.startsWith('/')) return fromDialect(p, this.dialect)
     if (p.startsWith('\\')) return null
     return join(this.cwd, p)
   }
@@ -523,7 +537,7 @@ export class TermView {
       if (/^\/[A-Za-z]:\//.test(p)) p = p.slice(1)
       const line = /#L?(\d+)$/.exec(p)
       p = p.replace(/#.*$/, '')
-      const abs = this.info?.msys ? fromMsys(p, this.info.msys) : normalize(p)
+      const abs = fromDialect(p, this.dialect)
       void statCached(abs).then((st) => {
         if (st) this.mgr.openRequest.emit({ path: abs, line: line ? Number(line[1]) : undefined, dir: st.dir })
       })
@@ -556,7 +570,7 @@ export class TermView {
       }
       if (e.code === 'Insert' && e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
         e.preventDefault()
-        void api.clipboard.read().then((t) => t && x.paste(t))
+        void api.clipboard.read().then((t) => this.pasteText(t))
         return false
       }
       if (e.key === 'Escape' && !mod && !e.shiftKey && !e.altKey && x.hasSelection()) {
@@ -566,7 +580,7 @@ export class TermView {
       }
       if (mod && !e.altKey && e.key.toLowerCase() === 'v') {
         e.preventDefault()
-        void api.clipboard.read().then((t) => t && x.paste(t))
+        void api.clipboard.read().then((t) => this.pasteText(t))
         return false
       }
       // The app's own keys are taken by the window before xterm sees them;
@@ -613,7 +627,7 @@ export class TermView {
       { id: 'kill', label: 'Close Terminal', accel: 'CmdOrCtrl+W' }
     ])
     if (id === 'copy') api.clipboard.write(x.getSelection())
-    else if (id === 'paste') void api.clipboard.read().then((t) => t && x.paste(t))
+    else if (id === 'paste') void api.clipboard.read().then((t) => this.pasteText(t))
     else if (id === 'all') x.selectAll()
     else if (id === 'clear') x.clear()
     else if (id === 'new') this.mgr.create()
@@ -676,8 +690,13 @@ export class TerminalManager {
     return this.create(undefined, undefined, id)
   }
 
-  create(cwd?: string, profileId?: string, attachId?: number): TermView {
-    const v = new TermView(this, this.host, cwd ?? this.active?.cwd ?? this.root, profileId, attachId)
+  /** A new zsh tab that runs `command` first (Settings > Tools). */
+  run(command: string): TermView {
+    return this.create(undefined, 'zsh', undefined, command)
+  }
+
+  create(cwd?: string, profileId?: string, attachId?: number, run?: string): TermView {
+    const v = new TermView(this, this.host, cwd ?? this.active?.cwd ?? this.root, profileId, attachId, run)
     this.views.push(v)
     v.tab.addEventListener('mousedown', (e) => {
       if (e.button === 1) {

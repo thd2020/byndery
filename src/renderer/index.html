@@ -2,15 +2,11 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta
-      http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: byndery-file:; font-src 'self' data:; connect-src 'self' ws:"
-    />
     <title>byndery</title>
     <link rel="stylesheet" href="./src/styles.css" />
   </head>
   <body>
-    <header id="titlebar">
+    <header id="titlebar" data-tauri-drag-region>
       <button id="ws-button" class="tb-item" title="Open folder (Ctrl+O)">
         <svg class="logo" viewBox="0 0 24 24" aria-hidden="true">
           <path d="M8.6 3.5 6.2 20.5h2.7L11.3 3.5z" fill="var(--logo-stem)" />
@@ -24,6 +20,18 @@
         <span>Go to file</span>
         <kbd>Ctrl P</kbd>
       </button>
+      <span class="tb-fill" data-tauri-drag-region></span>
+      <div id="caption" hidden>
+        <button id="cap-min" class="cap-btn" title="Minimize" tabindex="-1">
+          <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1 5h8" /></svg>
+        </button>
+        <button id="cap-max" class="cap-btn" title="Maximize" tabindex="-1">
+          <svg viewBox="0 0 10 10" aria-hidden="true"><rect x="1.5" y="1.5" width="7" height="7" /></svg>
+        </button>
+        <button id="cap-close" class="cap-btn close" title="Close" tabindex="-1">
+          <svg viewBox="0 0 10 10" aria-hidden="true"><path d="m1.5 1.5 7 7m0-7-7 7" /></svg>
+        </button>
+      </div>
     </header>
 
     <main id="layout">

@@ -4,11 +4,13 @@
 
 export const isWindowsPath = (p: string): boolean => /^[a-zA-Z]:[\\/]/.test(p)
 
-/** Canonical form: forward slashes, drive letter upper-cased, no trailing slash. */
+/** Canonical form: forward slashes, drive letter upper-cased, no trailing slash. UNC paths keep their leading //. */
 export function normalize(p: string): string {
   let s = p.replace(/\\/g, '/')
   if (/^[a-z]:/.test(s)) s = s[0].toUpperCase() + s.slice(1)
+  const unc = /^\/\/[^/]/.test(s)
   s = s.replace(/\/{2,}/g, '/')
+  if (unc) s = '/' + s
   if (s.length > 1 && s.endsWith('/') && !/^[A-Z]:\/$/.test(s)) s = s.slice(0, -1)
   return s
 }
@@ -94,4 +96,80 @@ export function relative(root: string, p: string): string | null {
     return s.toLowerCase().startsWith(prefix.toLowerCase()) ? s.slice(prefix.length) : null
   }
   return s.startsWith(prefix) ? s.slice(prefix.length) : null
+}
+
+// Path dialects. Each terminal speaks one: Windows (PowerShell, cmd), MSYS
+// (byndery's zsh, Git Bash: /c/x), WSL (/mnt/c/x, and its own files under
+// \\wsl.localhost\<distro>), or plain POSIX (macOS, Linux). Paths cross
+// between them only when a string is unmistakably a path: a drive letter, a
+// /c/ or /mnt/c/ prefix, or a UNC path. A lone /flag or a regex stays as typed.
+
+/** What a terminal's paths look like. */
+export interface Dialect {
+  msys?: MsysMounts
+  /** The WSL distribution, for wsl.exe profiles. */
+  wsl?: string
+  /** PowerShell or cmd: Windows paths, with backslashes. */
+  windows?: boolean
+}
+
+const WSL_UNC = /^\/\/(?:wsl\.localhost|wsl\$)\/([^/]+)(\/.*)?$/i
+
+/** /mnt/c/Users -> C:/Users; any other Linux path -> //wsl.localhost/<distro>/path. */
+export function fromWsl(p: string, distro: string): string {
+  const m = /^\/mnt\/([a-zA-Z])(\/.*)?$/.exec(p)
+  if (m) return normalize(`${m[1].toUpperCase()}:${m[2] ?? '/'}`)
+  if (p.startsWith('/')) return normalize(`//wsl.localhost/${distro}${p}`)
+  return normalize(p)
+}
+
+/** C:/Users -> /mnt/c/Users; //wsl.localhost/<distro>/x -> /x. */
+export function toWsl(p: string): string {
+  const s = normalize(p)
+  const unc = WSL_UNC.exec(s)
+  if (unc) return unc[2] ?? '/'
+  const m = /^([A-Z]):(\/.*)?$/.exec(s)
+  return m ? `/mnt/${m[1].toLowerCase()}${m[2] && m[2] !== '/' ? m[2] : ''}` : s
+}
+
+/** A canonical path in the form a terminal takes. */
+export function toDialect(p: string, d: Dialect): string {
+  if (d.wsl) return toWsl(p)
+  if (d.msys) return toMsys(p)
+  if (d.windows) return normalize(p).replace(/\//g, '\\')
+  return p
+}
+
+/** A path a terminal printed, in canonical form. */
+export function fromDialect(p: string, d: Dialect): string {
+  if (d.wsl) return fromWsl(p, d.wsl)
+  if (d.msys) return fromMsys(p, d.msys)
+  return normalize(p)
+}
+
+/** Whether a whole string is one absolute path in any dialect: what a paste converts. */
+export function isAbsolutePath(s: string): boolean {
+  // /c/x needs a folder after the drive: a lone /c or /s is a flag in cmd and many tools.
+  return isWindowsPath(s) || /^\/mnt\/[a-zA-Z](?:\/|$)/.test(s) || /^\/(?:cygdrive\/)?[a-zA-Z]\/[^/]/.test(s) || /^(?:\\\\|\/\/)[^\\/]+[\\/][^\\/]/.test(s)
+}
+
+/** A pasted string that is exactly one absolute path, rewritten for the terminal; anything else unchanged. */
+export function convertPaste(text: string, d: Dialect): string {
+  const t = text.trim()
+  if (!t || /[\r\n]/.test(t) || !isAbsolutePath(t) || /^[a-z][a-z0-9+.-]*:\/\//i.test(t)) return text
+  let canonical: string
+  if (/^\/mnt\/[a-zA-Z](\/|$)/.test(t)) canonical = fromWsl(t, d.wsl ?? '')
+  else if (/^\/(?:cygdrive\/)?[a-zA-Z](\/|$)/.test(t)) canonical = fromMsys(t)
+  else canonical = normalize(t)
+  // A bare /c is a path in MSYS and WSL, but in a POSIX shell it may be anything.
+  if (!d.wsl && !d.msys && !d.windows) return text
+  return toDialect(canonical, d)
+}
+
+/** Quotes a path for the terminal's own syntax when it needs quoting. */
+export function quoteFor(p: string, d: Dialect & { shell?: string }): string {
+  if (!d.windows) return shellQuote(p)
+  if (/^[\w@%+=:,.\\/-]+$/.test(p)) return p
+  // PowerShell: single quotes, which expand nothing. cmd: double quotes.
+  return /pwsh|powershell/i.test(d.shell ?? '') ? `'${p.replace(/'/g, "''")}'` : `"${p}"`
 }

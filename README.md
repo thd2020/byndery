@@ -10,6 +10,7 @@ The name comes from a bindery, the workshop where loose sheets are sewn into one
 
 ## Recent changes
 
+- **2026-11-13.** 0.0.2 moves byndery from Electron to Tauri: a Rust backend and the system's web view, so a much smaller install. The Linux tools on Windows now live in your user folder and survive updates, a missing command offers to install itself, Settings has Shell and Tools pages, PowerShell terminals get command marks and folder sync, and WSL distributions appear as profiles.
 - **2026-11-13.** byndery can be the default terminal on Windows 11 22H2 and later. PowerShell, Command Prompt and other console programs started from Start, Explorer or Run open as byndery tabs instead of console windows. The installer offers it on its last page, Settings → General turns it on or off, and uninstalling gives the choice back to the terminal chosen before.
 - **2026-11-12.** The first release packages Windows x64 and ARM64, macOS Intel and Apple Silicon, and Linux x64 and ARM64 installers. Windows NSIS and Linux AppImage builds check for updates, verify SHA-256, and install updates when byndery closes; the other installer types link to the release page.
 - **2026-11-12.** Byndery can replace a PowerShell or Command Prompt window for your terminal work. Its shell profiles run with your signed-in account's permissions.
@@ -26,10 +27,10 @@ The name comes from a bindery, the workshop where loose sheets are sewn into one
 
 ## Running from source
 
-You need Node.js 22 or later. On Windows, Git for Windows provides `tar` to unpack the bundled x64 shell.
+You need Node.js 22 or later and Rust (stable, from rustup). On Linux, Tauri also needs WebKitGTK: `sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev`. On Windows, Git for Windows provides `tar` to unpack the bundled x64 shell.
 
 ```bash
-npm ci
+npm ci && npm run icons
 ```
 
 ```bash
@@ -46,7 +47,7 @@ npm run dev
 
 Byndery is a terminal app you can use in place of a PowerShell or Command Prompt window. Its PowerShell and Command Prompt profiles run with the same permissions as the account that started byndery.
 
-On Windows 11 22H2 and later byndery can also be the default terminal, the way Windows Terminal can: console programs started outside byndery, such as PowerShell from the Start menu, a `.bat` file double-clicked in Explorer or `cmd` from Run, open as byndery tabs. The installer's last page offers it, and Settings → General → Default terminal turns it on or off. Windows hands the console over through Windows Terminal's console host, which Windows 11 includes; [`docs/RELEASE.md`](docs/RELEASE.md) explains how.
+On Windows 11 22H2 and later byndery can also be the default terminal, the way Windows Terminal can: console programs started outside byndery, such as PowerShell from the Start menu, a `.bat` file double-clicked in Explorer or `cmd` from Run, open as byndery tabs. The installer asks at the end of an install, and Settings → General → Default terminal turns it on or off. Windows hands the console over through Windows Terminal's console host, which Windows 11 includes; [`docs/RELEASE.md`](docs/RELEASE.md) explains how.
 
 ## Keys
 
@@ -82,11 +83,7 @@ Settings are kept in `settings.json`, which holds only what you changed. Termina
 npm test
 ```
 
-```bash
-npm run build && npm run e2e
-```
-
-`npm run e2e` starts the real app on a scratch repository and drives it: shell integration, links, the tree, the editor, the command router, the command memory and both path forms.
+`npm test` runs the TypeScript tests and the Rust backend's tests: paths in every dialect, settings, git status, the command memory's search, MSYS2 unpacking and repair, the default-terminal wire format and the update file names.
 
 ## Licence
 

@@ -3,6 +3,10 @@
 
 __byndery_prompt_before=$PROMPT
 
+# Settings > Shell, first for its switches (read by defaults.zsh and
+# plugins.zsh), and again at the end so its aliases win over the defaults.
+[[ -n $BYNDERY_MANAGED && -r $BYNDERY_MANAGED ]] && source $BYNDERY_MANAGED
+
 if [[ -r $BYNDERY_USER_ZDOTDIR/.zshrc ]]; then
   ZDOTDIR=$BYNDERY_USER_ZDOTDIR
   source $BYNDERY_USER_ZDOTDIR/.zshrc
@@ -44,4 +48,22 @@ unset __byndery_prompt_before __byndery_user_zshrc
 
 source $BYNDERY_ZDOTDIR/integration.zsh
 [[ $OSTYPE == (msys|cygwin)* ]] && source $BYNDERY_ZDOTDIR/windows.zsh
+[[ $OSTYPE == (msys|cygwin)* ]] && source $BYNDERY_ZDOTDIR/tools.zsh
 source $BYNDERY_ZDOTDIR/plugins.zsh
+
+[[ -n $BYNDERY_MANAGED && -r $BYNDERY_MANAGED ]] && source $BYNDERY_MANAGED
+
+# A first command from byndery (Settings > Tools), typed at the first prompt
+# and run there, so it is in the history like any other.
+if [[ -n $BYNDERY_RUN ]]; then
+  typeset -g __byndery_run=$BYNDERY_RUN
+  unset BYNDERY_RUN
+  autoload -Uz add-zle-hook-widget
+  __byndery_run_line() {
+    add-zle-hook-widget -d line-init __byndery_run_line
+    BUFFER=$__byndery_run
+    unset __byndery_run
+    zle accept-line
+  }
+  add-zle-hook-widget line-init __byndery_run_line
+fi

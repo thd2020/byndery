@@ -1,5 +1,5 @@
 import './canvas-font-shim'
-import { basename, dirname, fromMsys, isWindowsPath, join, normalize, relative, shellQuote, toMsys } from '../../shared/paths'
+import { basename, dirname, fromMsys, isWindowsPath, join, normalize, relative, shellQuote, toDialect } from '../../shared/paths'
 import { api, isMac } from './bridge'
 import { cssVar, onThemeChange } from './theme'
 import { TerminalManager } from './terminal'
@@ -51,6 +51,18 @@ function syncChrome(): void {
 }
 onThemeChange(syncChrome)
 syncChrome()
+
+// Windows and Linux draw no title bar: byndery's own caption buttons sit at its right end.
+if (!isMac) {
+  $('#caption').hidden = false
+  $('#cap-min').addEventListener('click', () => api.win.minimize())
+  $('#cap-max').addEventListener('click', () => api.win.toggleMaximize())
+  $('#cap-close').addEventListener('click', () => api.win.close())
+  api.win.onMaximized((max) => {
+    document.body.classList.toggle('maximized', max)
+    $('#cap-max').title = max ? 'Restore' : 'Maximize'
+  })
+}
 
 async function setWorkspace(dir: string): Promise<void> {
   root = normalize(dir)
@@ -125,7 +137,7 @@ function cdTerminal(dir: string): void {
   let line: string
   if (shell.includes('pwsh') || shell.includes('powershell')) line = `\x1b Set-Location -LiteralPath '${win.replace(/'/g, "''")}'`
   else if (shell === 'cmd') line = `\x1b cd /d "${win}"`
-  else line = `\x05\x15 cd -- ${shellQuote(t.info.msys ? toMsys(dir) : dir)}`
+  else line = `\x05\x15 cd -- ${shellQuote(toDialect(dir, { msys: t.info.msys, wsl: t.info.wsl }))}`
   api.term.write(t.info.id, line + '\r')
 }
 
@@ -210,6 +222,11 @@ tree.folderClicked.on((dir) => {
 })
 tree.enter.on((dir) => void navigate(dir))
 tree.terminalHere.on((dir) => terms.create(dir))
+// The agent starts in a new terminal in that folder, as if typed there.
+tree.agentHere.on(({ dir, command }) => {
+  const t = terms.create(dir)
+  void t.send(command).then(() => t.info && api.term.write(t.info.id, '\r'))
+})
 pathBar.navigate.on((dir) => void navigate(dir))
 tree.sendToTerminal.on((paths) => {
   const t = terms.active ?? terms.create()
@@ -333,6 +350,10 @@ function zoom(delta: number): void {
 
 const settingsSheet = new SettingsSheet(keymap)
 settingsSheet.openFile.on((file) => void editor.open(file, { pin: true }).then(() => editor.focus()))
+settingsSheet.runInTerminal.on((command) => {
+  settingsSheet.close()
+  terms.run(command).focus()
+})
 
 /** Settings arrived or changed: every part of the window takes its share. */
 function applySettings(s: SettingsState): void {
@@ -517,13 +538,18 @@ terms.activeChanged.on((t) => {
 })
 
 void (async () => {
-  applySettings(await api.settings.get())
-  await setWorkspace(await api.workspace.initial())
-  const handed = await api.term.handoffs()
-  for (const id of handed) terms.adopt(id)
-  // Started for a console: that console is the only tab.
-  if (!handed.length && !api.sys.handoff) terms.create(root)
-  else if (!handed.length) setTimeout(() => terms.views.length || terms.create(root), 15_000)
+  try {
+    applySettings(await api.settings.get())
+    await setWorkspace(await api.workspace.initial())
+    const handed = await api.term.handoffs()
+    for (const id of handed) terms.adopt(id)
+    // Started for a console: that console is the only tab.
+    if (!handed.length && !api.sys.handoff) terms.create(root)
+    else if (!handed.length) setTimeout(() => terms.views.length || terms.create(root), 15_000)
+  } finally {
+    // The window shows even when something above failed, so the failure can be seen.
+    api.win.ready()
+  }
 })()
 
 // Handles for the end-to-end tests and for poking at the app from DevTools.

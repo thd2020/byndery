@@ -156,8 +156,7 @@ kbd {
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 0 calc(140px + 8px) 0 6px;
-  -webkit-app-region: drag;
+  padding: 0 0 0 6px;
   border-bottom: 1px solid var(--line);
   position: relative;
 }
@@ -167,10 +166,45 @@ body.mac #titlebar {
   padding-right: 8px;
 }
 
-.tb-item,
-.tb-search,
-#titlebar .tb-meta {
-  -webkit-app-region: no-drag;
+/* The empty part of the title bar moves the window. */
+.tb-fill {
+  flex: 1;
+  align-self: stretch;
+}
+
+#caption {
+  display: flex;
+  align-self: stretch;
+  margin-left: 8px;
+}
+
+#caption[hidden] {
+  display: none;
+}
+
+.cap-btn {
+  width: 46px;
+  display: grid;
+  place-items: center;
+  color: var(--text-2);
+  transition: background var(--quick) var(--ease);
+}
+
+.cap-btn svg {
+  width: 10px;
+  height: 10px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1;
+}
+
+.cap-btn:hover {
+  background: var(--bg-hover);
+}
+
+.cap-btn.close:hover {
+  background: #c42b1c;
+  color: #fff;
 }
 
 .tb-item {
@@ -1520,4 +1554,3 @@ body.editor-max #editor {
   color: var(--text-3);
   font-family: var(--font-ui);
 }
-
