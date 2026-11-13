@@ -18,9 +18,10 @@ The licence texts of the MSYS2 packages are in `usr/share/licenses/` inside the 
 
 | Component | Licence |
 |---|---|
-| Electron and Chromium | MIT, with Chromium's notices in `LICENSES.chromium.html` |
+| Tauri and its plugins | MIT or Apache-2.0 |
+| The system web view: WebView2 (Windows), WebKit (macOS), WebKitGTK (Linux) | Provided by the operating system; not bundled |
+| Rust crates, declared in `src-tauri/Cargo.toml` (`cargo tree` lists every one with its version), among them portable-pty (MIT), notify (CC0-1.0 or Artistic-2.0), rusqlite (MIT) with SQLite (public domain), zstd (BSD-3-Clause), tar, reqwest, serde, tokio | MIT, Apache-2.0 or both, unless noted |
 | xterm.js and its addons | MIT |
-| node-pty | MIT |
 | The console handoff interfaces (`ITerminalHandoff`, `TERMINAL_STARTUP_INFO`) in `byndery-handoff.exe`, from Windows Terminal's `ITerminalHandoff.idl`, <https://github.com/microsoft/terminal> | MIT |
 | CodeMirror 6 and Lezer | MIT |
 | Source Serif 4 | SIL Open Font License 1.1 |
