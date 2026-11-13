@@ -264,7 +264,8 @@ function installDownloadedUpdate(relaunch: boolean): boolean {
   installerPath = null
   const build = target()
   if (build.kind === 'nsis') {
-    const child = spawn(file, ['/S'], { detached: true, stdio: 'ignore' })
+    // /S keeps the install folder and shortcuts; --force-run opens byndery again afterwards.
+    const child = spawn(file, ['/S', ...(relaunch ? ['--force-run'] : [])], { detached: true, stdio: 'ignore' })
     child.once('error', (error) => {
       state = { ...state, status: 'error', error: error.message }
       emit()
