@@ -2,12 +2,13 @@ import {
   SYSTEMS,
   SYSTEM_NAMES,
   getPath,
+  SHELL_PLUGINS,
   type Profile,
   type SettingsState,
   type SystemId,
   type TerminalSettings
 } from '../../shared/settings'
-import type { DefaultTerminalState, UpdateState } from '../../shared/api'
+import type { DefaultTerminalState, ToolsStatus, UpdateState } from '../../shared/api'
 import { api, Emitter, h } from './bridge'
 import { chordOf, keyLabel, normalizeChord, type Keymap } from './keymap'
 import { SCHEMES } from './theme'
@@ -125,6 +126,10 @@ export class SettingsSheet {
   private explainSeq = 0
   /** The user asked to see settings.json. */
   readonly openFile = new Emitter<string>()
+  /** A command to run in a new terminal tab (Settings > Tools). */
+  readonly runInTerminal = new Emitter<string>()
+  private tools: ToolsStatus | null = null
+  private toolsBusy: string | null = null
 
   constructor(private keymap: Keymap) {
     this.el.hidden = true
@@ -159,6 +164,11 @@ export class SettingsSheet {
       this.updateState = s
       if (this.isOpen && this.page === 'updates') this.render()
     })
+    api.tools.onProgress((f) => {
+      if (!this.toolsBusy) return
+      this.toolsBusy = `Repairing… ${Math.round(f * 100)}%`
+      if (this.isOpen && this.page === 'tools') this.render()
+    })
   }
 
   get isOpen(): boolean {
@@ -175,6 +185,7 @@ export class SettingsSheet {
     this.state = settings
     this.updateState = updates
     this.defaultTerminal = defaultTerminal
+    this.tools = null
     if (page) this.page = page
     this.el.hidden = false
     this.render()
@@ -200,6 +211,8 @@ export class SettingsSheet {
     const pages: Page[] = [{ id: 'general', label: 'General' }, { id: 'updates', label: 'Updates' }, { id: 'defaults', label: 'Profile defaults' }]
     for (const p of s.profiles) pages.push({ id: `profile:${p.id}`, label: p.name, indent: true })
     if (s.profiles.some((p) => p.routes)) pages.push({ id: 'commands', label: 'Commands' })
+    pages.push({ id: 'shell', label: 'Shell' })
+    if (api.platform === 'win32') pages.push({ id: 'tools', label: 'Tools' })
     pages.push({ id: 'files', label: 'Files' }, { id: 'editor', label: 'Editor' }, { id: 'keys', label: 'Keyboard' }, { id: 'history', label: 'Command history' })
     return pages
   }
@@ -253,6 +266,8 @@ export class SettingsSheet {
     else if (page === 'defaults') this.renderDefaults()
     else if (page.startsWith('profile:')) this.renderProfile(page.slice(8))
     else if (page === 'commands') this.renderCommands()
+    else if (page === 'shell') this.renderShell()
+    else if (page === 'tools') this.renderTools()
     else if (page === 'files') this.renderFiles()
     else if (page === 'editor') this.renderEditor()
     else if (page === 'keys') this.renderKeys()
@@ -721,6 +736,167 @@ export class SettingsSheet {
     if (!r) return void out.replaceChildren(h('span', 'settings-hint', 'The bundled zsh is not installed.'))
     const names: Record<string, string> = { zsh: SYSTEM_NAMES.linux, pwsh: SYSTEM_NAMES.powershell, cmd: SYSTEM_NAMES.cmd }
     out.replaceChildren(h('strong', '', names[r.system] ?? r.system), h('span', 'settings-hint', r.reason))
+  }
+
+  /** A list of name and value pairs stored as one object, such as aliases or environment variables. */
+  private pairs(parent: HTMLElement, path: Path, names: [string, string], valid: (name: string) => boolean): void {
+    const current = (this.value(path) as Record<string, string> | undefined) ?? {}
+    const table = h('div', 'pin-table')
+    for (const [name, value] of Object.entries(current).sort(([a], [b]) => a.localeCompare(b))) {
+      const row = h('div', 'pin-row')
+      const input = h('input', 'settings-input')
+      input.value = value
+      input.spellcheck = false
+      input.dataset.focusKey = `${path.join('.')}:${name}`
+      input.addEventListener('change', () => this.set([...path, name], input.value))
+      const rm = h('button', 'icon-btn')
+      rm.title = `Remove ${name}`
+      rm.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4.5 4.5 7 7M11.5 4.5l-7 7"/></svg>'
+      rm.addEventListener('click', () => {
+        const next = { ...current }
+        delete next[name]
+        this.set(path, next)
+      })
+      row.append(h('code', 'pin-name', name), input, rm)
+      table.append(row)
+    }
+    const add = h('div', 'pin-row add')
+    const nameIn = h('input', 'settings-input')
+    nameIn.placeholder = names[0]
+    nameIn.spellcheck = false
+    nameIn.dataset.focusKey = `${path.join('.')}:new`
+    const valueIn = h('input', 'settings-input')
+    valueIn.placeholder = names[1]
+    valueIn.spellcheck = false
+    const addBtn = h('button', 'text-btn', 'Add')
+    const commit = (): void => {
+      const n = nameIn.value.trim()
+      if (!valid(n)) return nameIn.focus()
+      this.set(path, { ...current, [n]: valueIn.value })
+    }
+    addBtn.addEventListener('click', commit)
+    valueIn.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') commit()
+    })
+    add.append(nameIn, valueIn, addBtn)
+    table.append(add)
+    parent.append(table)
+  }
+
+  /** Settings > Shell: zsh plugins, aliases, environment and PATH, for every zsh and bash byndery starts. */
+  private renderShell(): void {
+    this.heading('Shell')
+    const plugins = this.group('zsh plugins')
+    plugins.append(h('div', 'settings-hint group-hint', 'byndery ships these for zsh. A plugin your own .zshrc loads is never loaded twice.'))
+    for (const [key, label, hint] of SHELL_PLUGINS) this.field(plugins, { label, hint, path: ['shell', 'plugins', key], control: 'toggle' })
+    if (api.platform === 'win32') {
+      this.field(plugins, {
+        label: 'Offer to install missing commands',
+        hint: 'When nothing knows a command, byndery asks whether to install it with pacman.',
+        path: ['shell', 'offerInstall'],
+        control: 'toggle'
+      })
+    }
+    const aliases = this.group('Aliases')
+    aliases.append(h('div', 'settings-hint group-hint', 'For zsh and bash. Applies to new terminals.'))
+    this.pairs(aliases, ['shell', 'aliases'], ['Name', 'Command'], (n) => /^[\w.+-]+$/.test(n))
+    const env = this.group('Environment variables')
+    this.pairs(env, ['shell', 'env'], ['NAME', 'Value'], (n) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(n))
+    const path = this.group('Added to PATH')
+    path.append(h('div', 'settings-hint group-hint', 'Folders searched after everything else, one per line.'))
+    const area = h('textarea', 'settings-input wide')
+    area.rows = 3
+    area.spellcheck = false
+    area.dataset.focusKey = 'shell.path'
+    area.value = ((this.value(['shell', 'path']) as string[] | undefined) ?? []).join('\n')
+    area.addEventListener('change', () => this.set(['shell', 'path'], area.value.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)))
+    path.append(area)
+  }
+
+  /** Settings > Tools (Windows): byndery's MSYS2, packages added to it, and links to the rest of Windows. */
+  private renderTools(): void {
+    this.heading('Tools')
+    const t = this.tools
+    if (!t) {
+      this.body.append(h('div', 'settings-hint group-hint', 'Reading…'))
+      void api.tools.status().then((s) => {
+        this.tools = s
+        if (this.isOpen && this.page === 'tools') this.render()
+      })
+      return
+    }
+    const run = (command: string): void => this.runInTerminal.emit(command)
+    const linux = this.group('Linux tools')
+    let status = 'byndery’s Linux tools are not part of this build.'
+    if (t.bundled && !t.installed) status = 'Not set up yet: they unpack the first time a zsh terminal opens.'
+    else if (t.installed && t.healthy) status = `Ready, in ${t.path.replace(/\//g, '\\')}.`
+    else if (t.installed) status = `Damaged: ${t.missing.join(', ')} ${t.missing.length === 1 ? 'is' : 'are'} missing. Repair restores them.`
+    linux.append(h('div', t.installed && !t.healthy ? 'settings-hint warn' : 'settings-hint group-hint', this.toolsBusy ?? status))
+    const actions = h('div', 'settings-actions')
+    const update = h('button', 'text-btn', 'Update all tools')
+    update.disabled = !t.healthy
+    update.addEventListener('click', () => run('pacman -Syu'))
+    const repair = h('button', 'text-btn', 'Repair')
+    repair.disabled = !t.bundled || this.toolsBusy != null
+    repair.title = 'Unpacks byndery’s base again. Packages you added stay.'
+    repair.addEventListener('click', () => {
+      this.toolsBusy = 'Repairing…'
+      this.render()
+      void api.tools.repair().then(
+        (s) => {
+          this.tools = s
+          this.toolsBusy = null
+          this.render()
+        },
+        (e) => {
+          this.toolsBusy = `Repair failed: ${e}`
+          this.render()
+        }
+      )
+    })
+    actions.append(update, repair)
+    linux.append(actions)
+
+    const pkgs = this.group('Added packages')
+    pkgs.append(h('div', 'settings-hint group-hint', 'Installed with pacman on top of byndery’s base. App updates keep them.'))
+    const list = h('div', 'pin-table')
+    for (const name of t.added) {
+      const row = h('div', 'pin-row')
+      const rm = h('button', 'text-btn', 'Remove')
+      rm.addEventListener('click', () => run(`pacman -R ${name}`))
+      row.append(h('code', 'pin-name', name), h('span', 'spacer'), rm)
+      list.append(row)
+    }
+    const add = h('div', 'pin-row add')
+    const name = h('input', 'settings-input')
+    name.placeholder = 'Package, such as jq or make'
+    name.spellcheck = false
+    name.dataset.focusKey = 'tools:new'
+    const install = h('button', 'text-btn', 'Install')
+    const go = (): void => {
+      const n = name.value.trim()
+      if (/^[\w.+-]+$/.test(n)) run(`pacman -Sy --needed ${n}`)
+    }
+    install.disabled = !t.healthy
+    install.addEventListener('click', go)
+    name.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') go()
+    })
+    add.append(name, install)
+    list.append(add)
+    pkgs.append(list)
+
+    const other = this.group('Other apps')
+    this.field(other, { label: 'Open in byndery, in Explorer', hint: 'A folder’s menu opens it in byndery (under “Show more options” on Windows 11).', path: ['integration', 'explorerMenu'], control: 'toggle' })
+    this.field(other, {
+      label: 'Let Claude Code use byndery’s bash',
+      hint: t.integration.gitBashPath && !this.value(['integration', 'gitBashForApps'])
+        ? `CLAUDE_CODE_GIT_BASH_PATH is already ${t.integration.gitBashPath}; byndery leaves it alone.`
+        : 'Sets CLAUDE_CODE_GIT_BASH_PATH for your account, so Claude Code works without Git for Windows.',
+      path: ['integration', 'gitBashForApps'],
+      control: 'toggle'
+    })
+    this.field(other, { label: 'Add the Linux tools to PATH', hint: 'After everything else, so Windows’ own commands still win. New windows of other apps see them.', path: ['integration', 'toolsOnPath'], control: 'toggle' })
   }
 
   private renderFiles(): void {
