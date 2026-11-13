@@ -2,6 +2,7 @@ import { syntaxTree } from '@codemirror/language'
 import type { EditorState, Range } from '@codemirror/state'
 import { Decoration, EditorView, ViewPlugin, WidgetType, type DecorationSet, type ViewUpdate } from '@codemirror/view'
 import { dirname, join, isWindowsPath, normalize } from '../../shared/paths'
+import { api } from './bridge'
 
 // Live preview in the style of Obsidian: Markdown renders in place, and the
 // syntax of a construct reappears only while the cursor is inside it, so the
@@ -109,7 +110,7 @@ export function resolveImage(src: string, filePath: string): string {
   if (/^(https?:|data:)/.test(src)) return src
   const clean = decodeURI(src.replace(/^<|>$/g, ''))
   const abs = isWindowsPath(clean) || clean.startsWith('/') ? normalize(clean) : join(dirname(filePath), clean)
-  return 'byndery-file://local/' + encodeURI(abs).replace(/#/g, '%23').replace(/\?/g, '%3F')
+  return api.fileUrl(abs)
 }
 
 function build(view: EditorView, opts: LiveOptions): DecorationSet {
@@ -306,4 +307,3 @@ export function livePreview(opts: LiveOptions) {
     EditorView.lineWrapping
   ]
 }
-

@@ -38,6 +38,8 @@ export class FileTree {
   readonly enter = new Emitter<string>()
   /** Open a terminal in this folder. */
   readonly terminalHere = new Emitter<string>()
+  /** A coding agent to start in a new terminal in this folder. */
+  readonly agentHere = new Emitter<{ dir: string; command: string }>()
 
   constructor(private el: HTMLElement) {
     el.append(this.spacer)
@@ -369,6 +371,8 @@ export class FileTree {
       ...(entry?.dir ? [{ id: 'enter', label: 'Go Into Folder' }] : []),
       ...(!entry && dirname(this.root) !== this.root ? [{ id: 'up', label: 'Go to Parent Folder', accel: 'Alt+Up' }] : []),
       { id: 'terminal', label: 'Open Terminal Here' },
+      { id: 'agent:claude', label: 'Run Claude Code Here' },
+      { id: 'agent:codex', label: 'Run Codex Here' },
       { separator: true },
       { id: 'new-file', label: 'New File…' },
       { id: 'new-folder', label: 'New Folder…' },
@@ -393,6 +397,10 @@ export class FileTree {
         break
       case 'terminal':
         this.terminalHere.emit(dir)
+        break
+      case 'agent:claude':
+      case 'agent:codex':
+        this.agentHere.emit({ dir, command: id.slice(6) })
         break
       case 'new-file':
       case 'new-folder':
