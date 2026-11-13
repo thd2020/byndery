@@ -1,6 +1,6 @@
 # byndery design route
 
-2026-11-12: Release installers bundle the Electron app and its native terminal dependency for Windows x64 and ARM64, macOS Intel and Apple Silicon, and Linux x64 and ARM64. Windows x64 also bundles MSYS2; other targets use the shells provided by their operating system. Byndery can host PowerShell and Command Prompt with the signed-in user's permissions; console handoff from programs launched outside byndery is not part of this release.
+2026-11-12: Release installers bundle the Electron app and its native terminal dependency for Windows x64 and ARM64, macOS Intel and Apple Silicon, and Linux x64 and ARM64. Windows x64 also bundles MSYS2; other targets use the shells provided by their operating system. Byndery can host PowerShell and Command Prompt with the signed-in user's permissions, and on Windows 11 22H2 and later it can be the default terminal for console programs started outside it (see [`RELEASE.md`](RELEASE.md)).
 
 Written 2026-11-09, when the first build of the terminal, the file tree and the editor landed, and updated the same day for keys, folder sync, the prompt and settings. [`landscape.md`](landscape.md) has the market scan this builds on; this memo says what we took from it, what we decided against, and what the first build contains.
 
