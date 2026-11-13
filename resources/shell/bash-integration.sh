@@ -16,6 +16,9 @@ else
   [ -r ~/.bashrc ] && . ~/.bashrc
 fi
 
+# Settings > Shell: aliases, environment and PATH (plugins are zsh's).
+[ -n "$BYNDERY_MANAGED_SH" ] && [ -r "$BYNDERY_MANAGED_SH" ] && . "$BYNDERY_MANAGED_SH"
+
 if [ -z "$__byndery_loaded" ]; then
   __byndery_loaded=1
   __byndery_in_command=0
