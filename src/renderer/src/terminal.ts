@@ -90,7 +90,9 @@ export class TermView {
     private mgr: TerminalManager,
     host: HTMLElement,
     startCwd: string,
-    profileId?: string
+    profileId?: string,
+    /** A session that already runs, such as a console Windows handed over, to show instead of starting one. */
+    attachId?: number
   ) {
     this.profileId = profileId ?? mgr.defaultProfile()?.id ?? ''
     this.cwd = startCwd
@@ -163,7 +165,16 @@ export class TermView {
     this.xterm.textarea?.addEventListener('focus', () => mgr.setActive(this))
 
     this.fit.fit()
-    this.ready = api.term.create(startCwd, this.xterm.cols, this.xterm.rows, profileId).then((info) => {
+    const started =
+      attachId == null
+        ? api.term.create(startCwd, this.xterm.cols, this.xterm.rows, profileId)
+        : api.term.attach(attachId, this.xterm.cols, this.xterm.rows)
+    this.ready = started.then((info) => {
+      if (!info) {
+        this.xterm.write('\x1b[2m[the console closed before it could be shown]\x1b[0m\r\n')
+        this.status = 'exited'
+        return
+      }
       this.info = info
       if (info.profile !== this.profileId) {
         this.profileId = info.profile
@@ -264,7 +275,7 @@ export class TermView {
   renderTab(): void {
     this.tab.replaceChildren()
     const status = h('span', `status ${this.status}`)
-    const label = h('span', 'label', this.info ? basename(this.cwd) || this.cwd : '…')
+    const label = h('span', 'label', this.info ? (this.info.title ?? (basename(this.cwd) || this.cwd)) : '…')
     const meta = h('span', 'meta', this.info?.shell ?? '')
     const close = h('button', 'close')
     close.append(icon(ICON.close))
@@ -660,8 +671,13 @@ export class TerminalManager {
     for (const v of this.views) v.applySettings()
   }
 
-  create(cwd?: string, profileId?: string): TermView {
-    const v = new TermView(this, this.host, cwd ?? this.active?.cwd ?? this.root, profileId)
+  /** Opens a tab on a console Windows handed to byndery. */
+  adopt(id: number): TermView {
+    return this.create(undefined, undefined, id)
+  }
+
+  create(cwd?: string, profileId?: string, attachId?: number): TermView {
+    const v = new TermView(this, this.host, cwd ?? this.active?.cwd ?? this.root, profileId, attachId)
     this.views.push(v)
     v.tab.addEventListener('mousedown', (e) => {
       if (e.button === 1) {
