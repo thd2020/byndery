@@ -10,7 +10,9 @@ import * as git from './git'
 import * as settings from './settings'
 import * as history from './history'
 import { checkForUpdates, getUpdateState, installPendingOnQuit, installUpdateNow, setAutoUpdatesEnabled, startUpdater } from './updater'
+import { defaultTerminalState, refreshDefaultTerminal, setDefaultTerminal, startHandoffServer } from './handoff'
 import { normalize } from '../shared/paths'
+import { handoffLabel, type HandoffHeader } from '../shared/handoff'
 
 // Window state and the last workspace live in Electron's userData folder,
 // never in the folder the user opened.
@@ -131,6 +133,39 @@ function createWindow(): BrowserWindow {
   return win
 }
 
+// Consoles Windows hands to byndery wait here until a window says it can take
+// them (term:handoffs), then go to the focused window as new tabs.
+const launchedForHandoff = process.argv.includes('--handoff')
+const handoffWindows = new Set<number>()
+const waitingHandoffs: number[] = []
+
+function receiveConsole(proc: term.TermProcess, header: HandoffHeader): void {
+  if (header.hidden) {
+    // Started hidden: it runs without a tab until it exits, as in a hidden console window.
+    proc.onData(() => {})
+    return
+  }
+  const id = term.adoptTerminal(proc, {
+    shell: header.program || 'console',
+    profile: '',
+    profileName: handoffLabel(header),
+    cwd: normalize(homedir()),
+    integrated: false,
+    title: handoffLabel(header)
+  })
+  const ready = BrowserWindow.getAllWindows().filter((w) => !w.isDestroyed() && handoffWindows.has(w.webContents.id))
+  const target = ready.find((w) => w.isFocused()) ?? ready[0]
+  if (!target) {
+    waitingHandoffs.push(id)
+    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    return
+  }
+  target.webContents.send('term:handoff', id)
+  if (target.isMinimized()) target.restore()
+  target.show()
+  target.focus()
+}
+
 function registerIpc(): void {
   const sender = (e: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent): BrowserWindow | null =>
     BrowserWindow.fromWebContents(e.sender)
@@ -147,7 +182,7 @@ function registerIpc(): void {
     w?.setBackgroundColor(bg)
   })
   ipcMain.on('sys:info', (e) => {
-    e.returnValue = { windowsBuild: term.windowsBuild(), home: normalize(homedir()) }
+    e.returnValue = { windowsBuild: term.windowsBuild(), home: normalize(homedir()), handoff: launchedForHandoff }
   })
 
   ipcMain.handle('dialog:saveAs', async (e, defaultPath: string) => {
@@ -185,6 +220,15 @@ function registerIpc(): void {
   ipcMain.on('term:ack', (_e, id: number, n: number) => term.ack(id, n))
   ipcMain.on('term:resize', (_e, id: number, c: number, r: number) => term.resize(id, c, r))
   ipcMain.on('term:kill', (_e, id: number) => term.kill(id))
+  ipcMain.handle('term:attach', (e, id: number, cols: number, rows: number) => term.attachTerminal(e.sender, id, cols, rows))
+  ipcMain.handle('term:handoffs', (e) => {
+    const contents = e.sender
+    if (!handoffWindows.has(contents.id)) {
+      handoffWindows.add(contents.id)
+      contents.once('destroyed', () => handoffWindows.delete(contents.id))
+    }
+    return waitingHandoffs.splice(0)
+  })
 
   ipcMain.handle('fs:list', (_e, dir: string) => files.list(dir))
   ipcMain.handle('fs:read', (_e, p: string) => files.read(p))
@@ -215,6 +259,8 @@ function registerIpc(): void {
   ipcMain.handle('updates:check', () => checkForUpdates())
   ipcMain.handle('updates:setEnabled', (_e, enabled: boolean) => setAutoUpdatesEnabled(enabled))
   ipcMain.handle('updates:install', () => installUpdateNow())
+  ipcMain.handle('defterm:get', () => defaultTerminalState())
+  ipcMain.handle('defterm:set', (_e, enabled: boolean) => setDefaultTerminal(enabled))
 
   ipcMain.handle('git:status', (_e, root: string) => git.status(root))
   ipcMain.handle('git:show', (_e, p: string) => git.show(p))
@@ -279,8 +325,10 @@ app.whenReady().then(() => {
       : null
   )
   registerIpc()
+  startHandoffServer(receiveConsole)
   createWindow()
   startUpdater()
+  refreshDefaultTerminal()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
